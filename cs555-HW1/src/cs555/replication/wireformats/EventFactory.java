@@ -34,7 +34,21 @@ public class EventFactory {
 			if (DEBUG) { System.out.println("Message Type being passed is: " + type); }
 			
 			switch(type) {
-			
+				// CHUNKSERVER_REGISTER_REQUEST = 6000
+				case Protocol.CHUNKSERVER_REGISTER_REQUEST:
+					event = new ChunkServerRegisterRequest(marshalledBytes);
+					break;
+				// CHUNKSERVER_REGISTER_RESPONSE = 6001
+				case Protocol.CHUNKSERVER_REGISTER_RESPONSE:
+					event = new ChunkServerRegisterResponse(marshalledBytes);
+					break;
+				// CONTROLLER_REGISTER_RESPONSE_CHUNKSERVER = 7000
+				case Protocol.CONTROLLER_REGISTER_RESPONSE_CHUNKSERVER:
+					event = new ControllerRegisterResponseChunkServer(marshalledBytes);
+					break;
+				default:
+					System.out.println("Invalid Message Type");
+					return null;
 			}
 		} catch (IOException ioe) {
 			System.out.println("EventFactory Exception");
