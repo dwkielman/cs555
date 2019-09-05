@@ -5,8 +5,19 @@ package cs555.replication.wireformats;
  */
 
 public class Protocol {
+	
+	public static final int CHUNKSERVER_REGISTER_REQUEST = 6000;
+	public static final int CHUNKSERVER_REGISTER_RESPONSE = 6001;
+	
+	public static final int CONTROLLER_REGISTER_RESPONSE_CHUNKSERVER = 7000;
+	
+	/**
 	public static final int REGISTER_REQUEST = 6000;
 	public static final int REGISTER_RESPONSE = 6001;
+	
+	
+	
+	
 	public static final int MINOR_HEARTBEAT = 6002;
 	public static final int MAJOR_HEARTBEAT = 6003;
 	public static final int CHUNK_SERVER_SECURITY_REQUEST = 6004;
@@ -14,4 +25,5 @@ public class Protocol {
 
 	public static final int NODE_CONNECTION_REQUEST = 6011;
 	public static final int NODE_CONNECTION_RESPONSE = 6012;
+	**/
 }
