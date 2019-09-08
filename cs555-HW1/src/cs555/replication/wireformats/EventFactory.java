@@ -34,17 +34,21 @@ public class EventFactory {
 			if (DEBUG) { System.out.println("Message Type being passed is: " + type); }
 			
 			switch(type) {
-				// CHUNKSERVER_REGISTER_REQUEST = 6000
-				case Protocol.CHUNKSERVER_REGISTER_REQUEST:
-					event = new ChunkServerRegisterRequest(marshalledBytes);
+				// CONTROLLER_REGISTER_RESPONSE_TO_CHUNKSERVER = 6000
+				case Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CHUNKSERVER:
+					event = new ControllerRegisterResponseToChunkServer(marshalledBytes);
 					break;
-				// CHUNKSERVER_REGISTER_RESPONSE = 6001
-				case Protocol.CHUNKSERVER_REGISTER_RESPONSE:
-					event = new ChunkServerRegisterResponse(marshalledBytes);
+				// CONTROLLER_REGISTER_RESPONSE_TO_CLIENT = 6001
+				case Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CLIENT:
+					event = new ControllerRegisterResponseToClient(marshalledBytes);
 					break;
-				// CONTROLLER_REGISTER_RESPONSE_CHUNKSERVER = 7000
-				case Protocol.CONTROLLER_REGISTER_RESPONSE_CHUNKSERVER:
-					event = new ControllerRegisterResponseChunkServer(marshalledBytes);
+				// CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER = 7000
+				case Protocol.CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER:
+					event = new ChunkServerRegisterRequestToController(marshalledBytes);
+					break;
+				// CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8000
+				case Protocol.CLIENT_REGISTER_REQUEST_TO_CONTROLLER:
+					event = new ClientRegisterRequestToController(marshalledBytes);
 					break;
 				default:
 					System.out.println("Invalid Message Type");

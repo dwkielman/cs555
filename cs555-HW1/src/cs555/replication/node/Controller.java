@@ -9,8 +9,10 @@ import java.util.HashMap;
 import cs555.replication.transport.TCPSender;
 import cs555.replication.transport.TCPServerThread;
 import cs555.replication.util.NodeInformation;
-import cs555.replication.wireformats.ChunkServerRegisterRequest;
-import cs555.replication.wireformats.ControllerRegisterResponseChunkServer;
+import cs555.replication.wireformats.ChunkServerRegisterRequestToController;
+import cs555.replication.wireformats.ClientRegisterRequestToController;
+import cs555.replication.wireformats.ControllerRegisterResponseToChunkServer;
+import cs555.replication.wireformats.ControllerRegisterResponseToClient;
 import cs555.replication.wireformats.Event;
 import cs555.replication.wireformats.Protocol;
 
@@ -27,6 +29,7 @@ public class Controller implements Node {
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
 	private HashMap<NodeInformation, TCPSender> chunkServerNodesMap;
+	private HashMap<NodeInformation, TCPSender> clientNodesMap;
 	
 	private Controller(int portNumber) {
 		this.portNumber = portNumber;
@@ -79,12 +82,18 @@ public class Controller implements Node {
 		int eventType = event.getType();
 		if (DEBUG) { System.out.println("Event Type " + eventType + " passed to Registry."); }
 		switch(eventType) {
-			// CHUNKSERVER_REGISTER_REQUEST = 6000
-			case Protocol.CHUNKSERVER_REGISTER_REQUEST:
+			// CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER = 7000
+			case Protocol.CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER:
 				handleChunkServerRegisterRequest(event);
 				break;
+			// CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8000
+			case Protocol.CLIENT_REGISTER_REQUEST_TO_CONTROLLER:
+				handleClientRegisterRequest(event);
+				break;
+			default:
+				System.out.println("Invalid Event to Node.");
+				return;
 		}
-		
 	}
 
 	@Override
@@ -95,7 +104,7 @@ public class Controller implements Node {
 	
 	public void handleChunkServerRegisterRequest(Event event) {
 		if (DEBUG) { System.out.println("begin Controller handleChunkServerRegisterRequest"); }
-		ChunkServerRegisterRequest chunkServerRegisterRequest = (ChunkServerRegisterRequest) event;
+		ChunkServerRegisterRequestToController chunkServerRegisterRequest = (ChunkServerRegisterRequestToController) event;
 		String IP = chunkServerRegisterRequest.getIPAddress();
 		int port = chunkServerRegisterRequest.getPortNumber();
 		
@@ -115,20 +124,58 @@ public class Controller implements Node {
 			// success, node is not currently registered so adding to the map of nodes
 			if (!this.chunkServerNodesMap.containsKey(ni)) {
 				this.chunkServerNodesMap.put(ni, sender);
-				System.out.println("Registration request successful. The number of messaging nodes currently constituting the Registry is (" + this.chunkServerNodesMap.size() + ")");
+				System.out.println("Chunk Server Registration request successful. The number of Chunk Servers currently running on the Controller is (" + this.chunkServerNodesMap.size() + ")");
 				status = (byte) 1;
-				message = "Node Registered";
+				message = "Chunk Server Registered";
 			} else {
 				status = (byte) 0;
-				message = "Node already registered. No action taken";
+				message = "Chunk Server already registered. No action taken";
 			}
 			
-			ControllerRegisterResponseChunkServer registerResponse = new ControllerRegisterResponseChunkServer(status, message);
-			sender.sendData(registerResponse.getBytes());
+			ControllerRegisterResponseToChunkServer chunkServerRegisterResponse = new ControllerRegisterResponseToChunkServer(status, message);
+			sender.sendData(chunkServerRegisterResponse.getBytes());
 		} catch (IOException ioe) {
 			ioe.printStackTrace();
 		}
-		if (DEBUG) { System.out.println("end Registry handleChunkServerRegisterRequest"); }
+		if (DEBUG) { System.out.println("end Controller handleChunkServerRegisterRequest"); }
 	}
 
+	public void handleClientRegisterRequest(Event event) {
+		if (DEBUG) { System.out.println("begin Controller handleClientRegisterRequest"); }
+		ClientRegisterRequestToController clientRegisterRequest = (ClientRegisterRequestToController) event;
+		String IP = clientRegisterRequest.getIPAddress();
+		int port = clientRegisterRequest.getPortNumber();
+		
+		if (DEBUG) { System.out.println("Controller received a message type: " + clientRegisterRequest.getType()); }
+		
+		System.out.println("Controller received a clientRegisterRequest from IP: " + IP + " on Port: " + String.valueOf(port) + ".");
+		
+		NodeInformation ni = new NodeInformation(IP, port);
+		
+		try {
+			Socket socket = new Socket(IP, port);
+			TCPSender sender = new TCPSender(socket);
+			
+			byte status = 0;
+			String message = "";
+			
+			// success, node is not currently registered so adding to the map of nodes
+			if (!this.clientNodesMap.containsKey(ni)) {
+				this.clientNodesMap.put(ni, sender);
+				System.out.println("Client Registration request successful. The number of Clients currently running on the Controller is (" + this.clientNodesMap.size() + ")");
+				status = (byte) 1;
+				message = "Client Registered";
+			} else {
+				status = (byte) 0;
+				message = "Client already registered. No action taken";
+			}
+			
+			ControllerRegisterResponseToClient clientRegisterResponse = new ControllerRegisterResponseToClient(status, message);
+			sender.sendData(clientRegisterResponse.getBytes());
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+		}
+		if (DEBUG) { System.out.println("end Controller handleChunkServerRegisterRequest"); }
+	}
+	
 }

@@ -8,13 +8,13 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 
-public class ChunkServerRegisterRequest implements Event {
+public class ClientRegisterRequestToController implements Event {
 
-	private final int type = Protocol.CHUNKSERVER_REGISTER_REQUEST;
+	private final int type = Protocol.CLIENT_REGISTER_REQUEST_TO_CONTROLLER;
 	private String IPAddress;
 	private int portNumber;
 	
-	public ChunkServerRegisterRequest(String IPAddress, int portNumber) {
+	public ClientRegisterRequestToController(String IPAddress, int portNumber) {
 		this.IPAddress = IPAddress;
 		this.portNumber = portNumber;
 	}
@@ -26,13 +26,13 @@ public class ChunkServerRegisterRequest implements Event {
 	 * portNumber
 	 * @throws IOException 
 	 */
-	public ChunkServerRegisterRequest(byte[] marshalledBytes) throws IOException {
+	public ClientRegisterRequestToController(byte[] marshalledBytes) throws IOException {
 		ByteArrayInputStream baInputStream = new ByteArrayInputStream(marshalledBytes);
 		DataInputStream din = new DataInputStream(new BufferedInputStream(baInputStream));
 		
 		int type = din.readInt();
 		
-		if (type != Protocol.CHUNKSERVER_REGISTER_REQUEST) {
+		if (type != Protocol.CLIENT_REGISTER_REQUEST_TO_CONTROLLER) {
 			System.out.println("Invalid Message Type for RegisterRequest");
 			return;
 		}

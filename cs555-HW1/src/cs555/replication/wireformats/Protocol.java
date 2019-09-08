@@ -6,15 +6,15 @@ package cs555.replication.wireformats;
 
 public class Protocol {
 	
-	public static final int CHUNKSERVER_REGISTER_REQUEST = 6000;
-	public static final int CHUNKSERVER_REGISTER_RESPONSE = 6001;
+	public static final int CONTROLLER_REGISTER_RESPONSE_TO_CHUNKSERVER = 6000;
+	public static final int CONTROLLER_REGISTER_RESPONSE_TO_CLIENT = 6001;
 	
-	public static final int CONTROLLER_REGISTER_RESPONSE_CHUNKSERVER = 7000;
+	public static final int CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER = 7000;
+	
+	public static final int CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8000;
 	
 	/**
-	public static final int REGISTER_REQUEST = 6000;
-	public static final int REGISTER_RESPONSE = 6001;
-	
+	public static final int 
 	
 	
 	

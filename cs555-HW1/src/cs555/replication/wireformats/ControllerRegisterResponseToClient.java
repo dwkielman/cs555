@@ -8,13 +8,13 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 
-public class ChunkServerRegisterResponse implements Event {
-
-	private final int type = Protocol.CHUNKSERVER_REGISTER_RESPONSE;
+public class ControllerRegisterResponseToClient implements Event {
+	
+	private final int type = Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CLIENT;
 	private byte statusCode;
 	private String additionalInfo;
 	
-	public ChunkServerRegisterResponse(byte statusCode, String additionalInfo) {
+	public ControllerRegisterResponseToClient(byte statusCode, String additionalInfo) {
 		this.statusCode = statusCode;
 		this.additionalInfo = additionalInfo;
 	}
@@ -26,13 +26,13 @@ public class ChunkServerRegisterResponse implements Event {
 	 * additionalInfo
 	 * @throws IOException 
 	 */
-	public ChunkServerRegisterResponse(byte[] marshalledBytes) throws IOException {
+	public ControllerRegisterResponseToClient(byte[] marshalledBytes) throws IOException {
 		ByteArrayInputStream baInputStream = new ByteArrayInputStream(marshalledBytes);
 		DataInputStream din = new DataInputStream(new BufferedInputStream(baInputStream));
 		
 		int type = din.readInt();
 		
-		if (type != Protocol.CHUNKSERVER_REGISTER_RESPONSE) {
+		if (type != Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CLIENT) {
 			System.out.println("Invalid Message Type for RegisterResponse");
 			return;
 		}
