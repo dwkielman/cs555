@@ -12,6 +12,7 @@ public class Protocol {
 	public static final int CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER = 7000;
 	
 	public static final int CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8000;
+	public static final int CLIENT_CHUNKSERVER_REQUEST_TO_CONTROLLER = 8001;
 	
 	/**
 	public static final int 

@@ -4,12 +4,14 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.HashMap;
 
 import cs555.replication.transport.TCPSender;
 import cs555.replication.transport.TCPServerThread;
 import cs555.replication.util.NodeInformation;
 import cs555.replication.wireformats.ChunkServerRegisterRequestToController;
+import cs555.replication.wireformats.ClientChunkServerRequestToController;
 import cs555.replication.wireformats.ClientRegisterRequestToController;
 import cs555.replication.wireformats.ControllerRegisterResponseToChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToClient;
@@ -30,10 +32,12 @@ public class Controller implements Node {
 	private Thread thread;
 	private HashMap<NodeInformation, TCPSender> chunkServerNodesMap;
 	private HashMap<NodeInformation, TCPSender> clientNodesMap;
+	private ArrayList<String> filenames;
 	
 	private Controller(int portNumber) {
 		this.portNumber = portNumber;
 		this.chunkServerNodesMap = new HashMap<NodeInformation, TCPSender>();
+		this.filenames = new ArrayList<String>();
 		
 		try {
 			TCPServerThread controllerServerThread = new TCPServerThread(this.portNumber, this);
@@ -90,6 +94,10 @@ public class Controller implements Node {
 			case Protocol.CLIENT_REGISTER_REQUEST_TO_CONTROLLER:
 				handleClientRegisterRequest(event);
 				break;
+			// CLIENT_CHUNKSERVER_REQUEST_TO_CONTROLLER = 8001
+			case Protocol.CLIENT_CHUNKSERVER_REQUEST_TO_CONTROLLER:
+				handleClientChunkServerRequest(event);
+				break;
 			default:
 				System.out.println("Invalid Event to Node.");
 				return;
@@ -102,7 +110,7 @@ public class Controller implements Node {
 		
 	}
 	
-	public void handleChunkServerRegisterRequest(Event event) {
+	private void handleChunkServerRegisterRequest(Event event) {
 		if (DEBUG) { System.out.println("begin Controller handleChunkServerRegisterRequest"); }
 		ChunkServerRegisterRequestToController chunkServerRegisterRequest = (ChunkServerRegisterRequestToController) event;
 		String IP = chunkServerRegisterRequest.getIPAddress();
@@ -140,7 +148,7 @@ public class Controller implements Node {
 		if (DEBUG) { System.out.println("end Controller handleChunkServerRegisterRequest"); }
 	}
 
-	public void handleClientRegisterRequest(Event event) {
+	private void handleClientRegisterRequest(Event event) {
 		if (DEBUG) { System.out.println("begin Controller handleClientRegisterRequest"); }
 		ClientRegisterRequestToController clientRegisterRequest = (ClientRegisterRequestToController) event;
 		String IP = clientRegisterRequest.getIPAddress();
@@ -176,6 +184,20 @@ public class Controller implements Node {
 			ioe.printStackTrace();
 		}
 		if (DEBUG) { System.out.println("end Controller handleChunkServerRegisterRequest"); }
+	}
+	
+	private void handleClientChunkServerRequest(Event event) {
+		if (DEBUG) { System.out.println("begin Controller handleClientChunkServerRequest"); }
+		ClientChunkServerRequestToController clientChunkServerRequest = (ClientChunkServerRequestToController) event;
+		String filename = clientChunkServerRequest.getFilename();
+		
+		if (DEBUG) { System.out.println("Controller received a message type: " + clientChunkServerRequest.getType()); }
+		
+		if (!filenames.contains(filename)) {
+			filenames.add(filename);
+			// daniel, figure out how to properly store the files after this, should involve putting the metadata into some list but trying to figure out how to do that at the moment.
+		}
+		
 	}
 	
 }

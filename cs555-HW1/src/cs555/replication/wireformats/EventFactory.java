@@ -50,6 +50,10 @@ public class EventFactory {
 				case Protocol.CLIENT_REGISTER_REQUEST_TO_CONTROLLER:
 					event = new ClientRegisterRequestToController(marshalledBytes);
 					break;
+				// CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8001
+				case Protocol.CLIENT_CHUNKSERVER_REQUEST_TO_CONTROLLER:
+					event = new ClientChunkServerRequestToController(marshalledBytes);
+					break;
 				default:
 					System.out.println("Invalid Message Type");
 					return null;

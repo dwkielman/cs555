@@ -1,9 +1,13 @@
 package cs555.replication.node;
 
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.Scanner;
 
 import cs555.replication.transport.TCPReceiverThread;
 import cs555.replication.transport.TCPSender;
@@ -30,6 +34,8 @@ public class Client implements Node {
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
 	private TCPSender clientSender;
+	
+	private static final int SIZE_OF_CHUNK = 1024 * 64;
 	
 	private Client(String controllerIPAddress, int controllerPortNumber) {
 		this.controllerNodeInformation = new NodeInformation(controllerIPAddress, controllerPortNumber);
@@ -101,6 +107,43 @@ public class Client implements Node {
 		}
 		
 		Client client = new Client(controllerIPAddress, controllerPortNumber);
+		handleUserInput(client);
+	}
+	
+	private static void handleUserInput(Client client) {
+		Scanner scan = new Scanner(System.in);
+		
+		System.out.println("Ready for input.");
+        while(true) {
+            System.out.println("Options:\n[S] Store a File\n[R] Read a File\n[Q] Quit\nPlease type your request: ");
+            String input = scan.nextLine();
+            
+            input = input.toUpperCase();
+            switch (input) {
+            	case "S":
+            		if (DEBUG) { System.out.println("User selected Store a file."); }
+            		String filename;
+            		System.out.println("Enter the name of the file that you wish to store: ");
+					filename = scan.nextLine();
+					File file = new File(filename);
+					if (file.exists()) {
+						client.splitFile(file);
+					} else {
+						System.out.println("Command unrecognized. Please enter a valid input.");
+					}
+            		
+            		break;
+            	case "R":
+            		if (DEBUG) { System.out.println("User selected Read a file."); }
+            		break;
+            	case "Q":
+            		if (DEBUG) { System.out.println("User selected Quit."); }
+            		System.out.println("Quitting program. Goodbye.");
+            		System.exit(1);
+            	default:
+            		System.out.println("Command unrecognized. Please enter a valid input.");
+            }
+        }
 	}
 	
 	private void connectToController() {
@@ -148,5 +191,22 @@ public class Client implements Node {
 		}
 		if (DEBUG) { System.out.println("end ChunkServer handleChunkServerRegisterResponse"); }
 	}
-
+	
+	private void splitFile(File file) {
+		byte[] chunkSizeBytes = new byte[SIZE_OF_CHUNK];
+		int fileLength = 0;
+		
+		try {
+			BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file));
+			
+			while ((fileLength = bis.read(chunkSizeBytes)) > 0) {
+				
+			}
+			
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+		}
+	}
+	
+		
 }
