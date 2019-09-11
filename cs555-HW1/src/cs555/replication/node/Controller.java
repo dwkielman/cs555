@@ -5,10 +5,15 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import cs555.replication.transport.TCPSender;
 import cs555.replication.transport.TCPServerThread;
+import cs555.replication.util.HeartbeatMetadata;
 import cs555.replication.util.NodeInformation;
 import cs555.replication.wireformats.ChunkServerRegisterRequestToController;
 import cs555.replication.wireformats.ClientChunkServerRequestToController;
@@ -32,11 +37,16 @@ public class Controller implements Node {
 	private Thread thread;
 	private HashMap<NodeInformation, TCPSender> chunkServerNodesMap;
 	private HashMap<NodeInformation, TCPSender> clientNodesMap;
+	private ArrayList<HeartbeatMetadata> chunkServerHeartbeatMetadaList;
 	private ArrayList<String> filenames;
+	private HashMap<String, HashMap<Integer, ArrayList<HeartbeatMetadata>>> filesOnChunkServersMap;
+	private final int REPLICATION_LEVEL = 3;
 	
 	private Controller(int portNumber) {
 		this.portNumber = portNumber;
 		this.chunkServerNodesMap = new HashMap<NodeInformation, TCPSender>();
+		this.chunkServerHeartbeatMetadaList = new ArrayList<HeartbeatMetadata>();
+		this.filesOnChunkServersMap = new HashMap<String, HashMap<Integer, ArrayList<HeartbeatMetadata>>>();
 		this.filenames = new ArrayList<String>();
 		
 		try {
@@ -115,13 +125,16 @@ public class Controller implements Node {
 		ChunkServerRegisterRequestToController chunkServerRegisterRequest = (ChunkServerRegisterRequestToController) event;
 		String IP = chunkServerRegisterRequest.getIPAddress();
 		int port = chunkServerRegisterRequest.getPortNumber();
+		long nodeFreeSpace = chunkServerRegisterRequest.getFreeSpace();
+		
 		
 		if (DEBUG) { System.out.println("Controller received a message type: " + chunkServerRegisterRequest.getType()); }
 		
 		System.out.println("Controller received a chunkServerRegisterRequest from IP: " + IP + " on Port: " + String.valueOf(port) + ".");
 		
 		NodeInformation ni = new NodeInformation(IP, port);
-		
+		HeartbeatMetadata hbm = new HeartbeatMetadata(ni, 0, nodeFreeSpace);
+
 		try {
 			Socket socket = new Socket(IP, port);
 			TCPSender sender = new TCPSender(socket);
@@ -132,6 +145,7 @@ public class Controller implements Node {
 			// success, node is not currently registered so adding to the map of nodes
 			if (!this.chunkServerNodesMap.containsKey(ni)) {
 				this.chunkServerNodesMap.put(ni, sender);
+				this.chunkServerHeartbeatMetadaList.add(hbm);
 				System.out.println("Chunk Server Registration request successful. The number of Chunk Servers currently running on the Controller is (" + this.chunkServerNodesMap.size() + ")");
 				status = (byte) 1;
 				message = "Chunk Server Registered";
@@ -193,9 +207,21 @@ public class Controller implements Node {
 		
 		if (DEBUG) { System.out.println("Controller received a message type: " + clientChunkServerRequest.getType()); }
 		
-		if (!filenames.contains(filename)) {
+		Set<String> files = filesOnChunkServersMap.keySet();
+		
+		// file not already stored in the hashmap
+		if (!files.contains(filename)) {
+			//HashMap<Integer, ArrayList<HeartbeatMetadata>> chunkServers = this.filesOnChunkServersMap.get(filename);
+			if (chunkServerHeartbeatMetadaList.size() >= REPLICATION_LEVEL) {
+				// sort the chunk servers by those with the most space
+				chunkServerHeartbeatMetadaList.sort((h1, h2) -> Long.compare(h1.getFreeSpaceAvailable(), h2.getFreeSpaceAvailable()));
+				List<HeartbeatMetadata> chunkServers = chunkServerHeartbeatMetadaList.stream().limit(REPLICATION_LEVEL).collect(Collectors.toList());
+				// put the chunkserver nodeinformation into a message and send to client
+			}
+			
+					
 			filenames.add(filename);
-			// daniel, figure out how to properly store the files after this, should involve putting the metadata into some list but trying to figure out how to do that at the moment.
+			// clean up, add to the relevant collections and be sure to update the free space available on the chunk servers that are being used
 		}
 		
 	}

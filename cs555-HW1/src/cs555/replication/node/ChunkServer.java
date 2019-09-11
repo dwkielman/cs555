@@ -1,5 +1,6 @@
 package cs555.replication.node;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
@@ -28,6 +29,7 @@ public class ChunkServer implements Node {
 	private String localHostIPAddress;
 	private int localHostPortNumber;
 	private HashMap<NodeInformation, TCPSender> clientNodesMap;
+	private final String FILE_LOCATION = "/tmp/data";
 	private TCPReceiverThread chunkServerTCPReceiverThread;
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
@@ -122,7 +124,10 @@ public class ChunkServer implements Node {
 			
 			this.chunkServerSender = new TCPSender(controllerSocket);
 			
-			ChunkServerRegisterRequestToController chunkServerRegisterRequest = new ChunkServerRegisterRequestToController(this.controllerNodeInformation.getNodeIPAddress(), this.controllerNodeInformation.getNodePortNumber());
+			File file = new File(FILE_LOCATION);
+			long freeSpace = file.getFreeSpace();
+			
+			ChunkServerRegisterRequestToController chunkServerRegisterRequest = new ChunkServerRegisterRequestToController(this.controllerNodeInformation.getNodeIPAddress(), this.controllerNodeInformation.getNodePortNumber(), freeSpace);
 
 			if (DEBUG) { System.out.println("ChunkServer about to send message type: " + chunkServerRegisterRequest.getType()); }
 			

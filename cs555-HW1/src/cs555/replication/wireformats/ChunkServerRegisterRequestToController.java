@@ -13,10 +13,12 @@ public class ChunkServerRegisterRequestToController implements Event {
 	private final int type = Protocol.CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER;
 	private String IPAddress;
 	private int portNumber;
+	private long freeSpace;
 	
-	public ChunkServerRegisterRequestToController(String IPAddress, int portNumber) {
+	public ChunkServerRegisterRequestToController(String IPAddress, int portNumber, long freeSpace) {
 		this.IPAddress = IPAddress;
 		this.portNumber = portNumber;
+		this.freeSpace = freeSpace;
 	}
 	
 	/**
@@ -24,6 +26,7 @@ public class ChunkServerRegisterRequestToController implements Event {
 	 * type
 	 * IPAddress
 	 * portNumber
+	 * freeSpace
 	 * @throws IOException 
 	 */
 	public ChunkServerRegisterRequestToController(byte[] marshalledBytes) throws IOException {
@@ -48,6 +51,11 @@ public class ChunkServerRegisterRequestToController implements Event {
 		int portNumber = din.readInt();
 
 		this.portNumber = portNumber;
+		
+		// freeSpace
+		long freeSpace = din.readLong();
+		
+		this.freeSpace = freeSpace;
 		
 		baInputStream.close();
 		din.close();
@@ -74,6 +82,9 @@ public class ChunkServerRegisterRequestToController implements Event {
 		// portNumber
 		dout.writeInt(this.portNumber);
 		
+		// freeSpace
+		dout.writeLong(freeSpace);
+		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
@@ -87,6 +98,10 @@ public class ChunkServerRegisterRequestToController implements Event {
 
 	public int getPortNumber() {
 		return portNumber;
+	}
+	
+	public long getFreeSpace() {
+		return freeSpace;
 	}
 
 }
