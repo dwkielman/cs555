@@ -212,7 +212,9 @@ public class Client implements Node {
 		
 		// step 5: if chunk number is not equal to the total number of chunks, send another request to the controller for the next chunk number to be written
 		
-		// step 6: repeat process until chunk number == total number of chunks. In that case, file has been stored and can set the command line variable to true again to allow interfacting
+		// step 6: repeat process until chunk number == total number of chunks. In that case, file has been stored and can set the command line variable to true again to allow interfacing
+		
+		// so basically, everything below needs to be put into its own file to split the object then stored here. Do that next time and get working on all of this
 		
 		try {
 			BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file));
