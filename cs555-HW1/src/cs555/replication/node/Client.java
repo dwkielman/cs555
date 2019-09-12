@@ -13,6 +13,7 @@ import cs555.replication.transport.TCPReceiverThread;
 import cs555.replication.transport.TCPSender;
 import cs555.replication.transport.TCPServerThread;
 import cs555.replication.util.NodeInformation;
+import cs555.replication.wireformats.ClientChunkServerRequestToController;
 import cs555.replication.wireformats.ClientRegisterRequestToController;
 import cs555.replication.wireformats.ControllerRegisterResponseToClient;
 import cs555.replication.wireformats.Event;
@@ -127,7 +128,7 @@ public class Client implements Node {
 					filename = scan.nextLine();
 					File file = new File(filename);
 					if (file.exists()) {
-						client.splitFile(file);
+						client.sendClientChunkServerRequestToController(file);
 					} else {
 						System.out.println("Command unrecognized. Please enter a valid input.");
 					}
@@ -192,14 +193,34 @@ public class Client implements Node {
 		if (DEBUG) { System.out.println("end ChunkServer handleChunkServerRegisterResponse"); }
 	}
 	
-	private void splitFile(File file) {
+	private void sendClientChunkServerRequestToController(File file) {
 		byte[] chunkSizeBytes = new byte[SIZE_OF_CHUNK];
 		int fileLength = 0;
+		int chunkNumber = 0;
+		
+		NodeInformation client = new NodeInformation(this.localHostIPAddress, this.localHostPortNumber);
+		
+		// current idea on how to implement this:
+		
+		// step 1: create a class that splits the file up into chunks with the corresponding bytes for said chunk. Store that in some global variable here.
+		
+		// step 2: Once that object has been created, send the 0 chunk to the controller to request for servers for that chunk. Perhaps set some global variable at this point to not allow writing anything in the command line
+		
+		// step 3: in the metadata of what is sent back and forth, need to include the chunk number that we're on and the total number of chunks
+		
+		// step 4: controller sends chunk servers, listen in client for those to come in and it will say which chunk it is sending. Use that to get the correct byte data from the split file and send to one chunk server along with a list of other chunk servers
+		
+		// step 5: if chunk number is not equal to the total number of chunks, send another request to the controller for the next chunk number to be written
+		
+		// step 6: repeat process until chunk number == total number of chunks. In that case, file has been stored and can set the command line variable to true again to allow interfacting
 		
 		try {
 			BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file));
 			
-			while ((fileLength = bis.read(chunkSizeBytes)) > 0) {
+			while ((fileLength = bis.read(chunkSizeBytes)) >= 0) {
+				ClientChunkServerRequestToController chunkServersRequest = new ClientChunkServerRequestToController(client, chunkNumber, file.getName());
+				
+				this.clientSender.sendData(chunkServersRequest.getBytes());
 				
 			}
 			
@@ -207,6 +228,7 @@ public class Client implements Node {
 			ioe.printStackTrace();
 		}
 	}
+	
 	
 		
 }

@@ -18,6 +18,7 @@ import cs555.replication.util.NodeInformation;
 import cs555.replication.wireformats.ChunkServerRegisterRequestToController;
 import cs555.replication.wireformats.ClientChunkServerRequestToController;
 import cs555.replication.wireformats.ClientRegisterRequestToController;
+import cs555.replication.wireformats.ControllerChunkServersResponseToClient;
 import cs555.replication.wireformats.ControllerRegisterResponseToChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToClient;
 import cs555.replication.wireformats.Event;
@@ -203,24 +204,45 @@ public class Controller implements Node {
 	private void handleClientChunkServerRequest(Event event) {
 		if (DEBUG) { System.out.println("begin Controller handleClientChunkServerRequest"); }
 		ClientChunkServerRequestToController clientChunkServerRequest = (ClientChunkServerRequestToController) event;
+		NodeInformation clientNode = clientChunkServerRequest.getClienNodeInformation();
+		int chunkNumber = clientChunkServerRequest.getChunkNumber();
 		String filename = clientChunkServerRequest.getFilename();
 		
 		if (DEBUG) { System.out.println("Controller received a message type: " + clientChunkServerRequest.getType()); }
 		
-		Set<String> files = filesOnChunkServersMap.keySet();
+		//Set<String> files = filesOnChunkServersMap.keySet();
 		
 		// file not already stored in the hashmap
-		if (!files.contains(filename)) {
+		if (!filesOnChunkServersMap.get(filename).containsKey(chunkNumber)) {
 			//HashMap<Integer, ArrayList<HeartbeatMetadata>> chunkServers = this.filesOnChunkServersMap.get(filename);
 			if (chunkServerHeartbeatMetadaList.size() >= REPLICATION_LEVEL) {
-				// sort the chunk servers by those with the most space
-				chunkServerHeartbeatMetadaList.sort((h1, h2) -> Long.compare(h1.getFreeSpaceAvailable(), h2.getFreeSpaceAvailable()));
-				List<HeartbeatMetadata> chunkServers = chunkServerHeartbeatMetadaList.stream().limit(REPLICATION_LEVEL).collect(Collectors.toList());
-				// put the chunkserver nodeinformation into a message and send to client
-			}
-			
+				try {
+					filenames.add(filename);
 					
-			filenames.add(filename);
+					// sort the chunk servers by those with the most space, this should do it in descending order
+					chunkServerHeartbeatMetadaList.sort((h1, h2) -> Long.compare(h2.getFreeSpaceAvailable(), h1.getFreeSpaceAvailable()));
+					ArrayList<HeartbeatMetadata> hbArrayList = chunkServerHeartbeatMetadaList.stream().limit(REPLICATION_LEVEL).collect(Collectors.toCollection(ArrayList::new));
+					
+					// update the chunkServers Hashmap
+					HashMap<Integer, ArrayList<HeartbeatMetadata>> tempMap = new HashMap<Integer, ArrayList<HeartbeatMetadata>>(chunkNumber);
+					tempMap.put(chunkNumber, hbArrayList);
+					filesOnChunkServersMap.put(filename, tempMap);
+					
+					// prep chunkServers to send to Client
+					ArrayList<NodeInformation> chunkServers = new ArrayList<NodeInformation>();
+					
+					for (HeartbeatMetadata hbm : hbArrayList) {
+						chunkServers.add(hbm.getNodeInformation());
+					}
+					
+					// put the chunkserver nodeinformation into a message and send to client
+					ControllerChunkServersResponseToClient chunkServersResponse = new ControllerChunkServersResponseToClient(REPLICATION_LEVEL, chunkServers);
+
+					this.clientNodesMap.get(clientNode).sendData(chunkServersResponse.getBytes());
+				} catch  (IOException ioe) {
+					ioe.printStackTrace();
+				}
+			}
 			// clean up, add to the relevant collections and be sure to update the free space available on the chunk servers that are being used
 		}
 		
