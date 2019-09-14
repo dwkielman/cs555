@@ -19,12 +19,14 @@ public class ControllerChunkServersResponseToClient implements Event {
 	private ArrayList<NodeInformation> chunkServersNodeInfoList;
 	private int chunkNumber;
 	private String filename;
+	private long timestamp;
 	
-	public ControllerChunkServersResponseToClient(int replicationLevel, ArrayList<NodeInformation> chunkServersNodeInfoList, int chunkNumber, String filename) {
+	public ControllerChunkServersResponseToClient(int replicationLevel, ArrayList<NodeInformation> chunkServersNodeInfoList, int chunkNumber, String filename, long timestamp) {
 		this.replicationLevel = replicationLevel;
 		this.chunkServersNodeInfoList = chunkServersNodeInfoList;
 		this.chunkNumber = chunkNumber;
 		this.filename = filename;
+		this.timestamp = timestamp;
 	}
 	
 	/**
@@ -34,6 +36,7 @@ public class ControllerChunkServersResponseToClient implements Event {
 	 * chunkServersNodeInfoList
 	 * chunkNumber
 	 * filename
+	 * timestamp
 	 * @throws IOException 
 	 */
 	public ControllerChunkServersResponseToClient(byte[] marshalledBytes) throws IOException {
@@ -75,6 +78,11 @@ public class ControllerChunkServersResponseToClient implements Event {
 		// filename
 		this.filename = new String(filenameBytes);
 		
+		// timestamp
+		long timestamp = din.readLong();
+		
+		this.timestamp = timestamp;
+		
 		baInputStream.close();
 		din.close();
 	}
@@ -111,6 +119,9 @@ public class ControllerChunkServersResponseToClient implements Event {
 		dout.writeInt(filenameLength);
 		dout.write(filenameBytes);
 		
+		// timestamp
+		dout.writeLong(this.timestamp);
+		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
@@ -133,6 +144,10 @@ public class ControllerChunkServersResponseToClient implements Event {
 	
 	public String getFilename() {
 		return this.filename;
+	}
+	
+	public long getTimestamp() {
+		return this.timestamp;
 	}
 	
 }

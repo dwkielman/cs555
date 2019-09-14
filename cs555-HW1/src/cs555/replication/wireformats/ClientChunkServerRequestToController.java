@@ -16,11 +16,13 @@ public class ClientChunkServerRequestToController implements Event {
 	private NodeInformation clienNodeInformation;
 	private int chunkNumber;
 	private String fileName;
+	private long timestamp;
 	
-	public ClientChunkServerRequestToController(NodeInformation nodeInformation, int chunkNumber, String fileName) {
+	public ClientChunkServerRequestToController(NodeInformation nodeInformation, int chunkNumber, String fileName, long timestamp) {
 		this.clienNodeInformation = nodeInformation;
 		this.chunkNumber = chunkNumber;
 		this.fileName = fileName;
+		this.timestamp = timestamp;
 	}
 	
 	/**
@@ -29,6 +31,7 @@ public class ClientChunkServerRequestToController implements Event {
 	 * NodeInformation
 	 * chunkNumber
 	 * fileName
+	 * timestamp
 	 * @throws IOException 
 	 */
 	public ClientChunkServerRequestToController(byte[] marshalledBytes) throws IOException {
@@ -59,6 +62,11 @@ public class ClientChunkServerRequestToController implements Event {
 		din.readFully(fileNameBytes);
 		
 		this.fileName = new String(fileNameBytes);
+		
+		// timestamp
+		long timestamp = din.readLong();
+		
+		this.timestamp = timestamp;
 		
 		baInputStream.close();
 		din.close();
@@ -91,6 +99,9 @@ public class ClientChunkServerRequestToController implements Event {
 		dout.writeInt(fileNameLength);
 		dout.write(fileNameBytes);
 		
+		// timestamp
+		dout.writeLong(this.timestamp);
+		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
@@ -99,15 +110,19 @@ public class ClientChunkServerRequestToController implements Event {
 	}
 	
 	public int getChunkNumber() {
-		return chunkNumber;
+		return this.chunkNumber;
 	}
 	
 	public NodeInformation getClienNodeInformation() {
-		return clienNodeInformation;
+		return this.clienNodeInformation;
 	}
 
 	public String getFilename() {
-		return fileName;
+		return this.fileName;
+	}
+	
+	public long getTimestamp() {
+		return this.timestamp;
 	}
 
 

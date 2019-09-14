@@ -207,6 +207,7 @@ public class Controller implements Node {
 		NodeInformation clientNode = clientChunkServerRequest.getClienNodeInformation();
 		int chunkNumber = clientChunkServerRequest.getChunkNumber();
 		String filename = clientChunkServerRequest.getFilename();
+		long timestamp = clientChunkServerRequest.getTimestamp();
 		
 		if (DEBUG) { System.out.println("Controller received a message type: " + clientChunkServerRequest.getType()); }
 		
@@ -236,7 +237,7 @@ public class Controller implements Node {
 					}
 					
 					// put the chunkserver nodeinformation into a message and send to client
-					ControllerChunkServersResponseToClient chunkServersResponse = new ControllerChunkServersResponseToClient(REPLICATION_LEVEL, chunkServers, chunkNumber, filename);
+					ControllerChunkServersResponseToClient chunkServersResponse = new ControllerChunkServersResponseToClient(REPLICATION_LEVEL, chunkServers, chunkNumber, filename, timestamp);
 
 					this.clientNodesMap.get(clientNode).sendData(chunkServersResponse.getBytes());
 				} catch  (IOException ioe) {

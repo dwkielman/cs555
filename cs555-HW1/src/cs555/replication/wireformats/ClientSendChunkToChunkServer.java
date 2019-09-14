@@ -19,13 +19,15 @@ public class ClientSendChunkToChunkServer implements Event {
 	private byte[] chunkBytes;
 	private int chunkNumber;
 	private String filename;
+	private long timestamp;
 	
-	public ClientSendChunkToChunkServer(int replicationLevel, ArrayList<NodeInformation> chunkServersNodeInfoList, byte[] chunkBytes, int chunkNumber, String filename) {
+	public ClientSendChunkToChunkServer(int replicationLevel, ArrayList<NodeInformation> chunkServersNodeInfoList, byte[] chunkBytes, int chunkNumber, String filename, long timestamp) {
 		this.replicationLevel = replicationLevel;
 		this.chunkServersNodeInfoList = chunkServersNodeInfoList;
 		this.chunkBytes = chunkBytes;
 		this.chunkNumber = chunkNumber;
 		this.filename = filename;
+		this.timestamp = timestamp;
 	}
 	
 	/**
@@ -83,6 +85,11 @@ public class ClientSendChunkToChunkServer implements Event {
 		// filename
 		this.filename = new String(filenameBytes);
 		
+		// timestamp
+		long timestamp = din.readLong();
+		
+		this.timestamp = timestamp;
+		
 		baInputStream.close();
 		din.close();
 	}
@@ -124,6 +131,9 @@ public class ClientSendChunkToChunkServer implements Event {
 		dout.writeInt(filenameLength);
 		dout.write(filenameBytes);
 				
+		// timestamp
+		dout.writeLong(this.timestamp);
+		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
@@ -146,6 +156,10 @@ public class ClientSendChunkToChunkServer implements Event {
 
 	public String getFilename() {
 		return this.filename;
+	}
+	
+	public long getTimestamp() {
+		return this.timestamp;
 	}
 
 }

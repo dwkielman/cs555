@@ -145,8 +145,9 @@ public class Client implements Node {
 						if (file.exists()) {
 							client.accessUserInput = false;
 							int chunkNumber = 0;
+							long timestamp = file.lastModified();
 							client.fileIntoChunks = splitFileIntoBytes(file, chunkNumber);
-							client.sendClientChunkServerRequestToController(filename, chunkNumber);
+							client.sendClientChunkServerRequestToController(filename, chunkNumber, timestamp);
 						} else {
 							System.out.println("Command unrecognized. Please enter a valid input.");
 						}
@@ -213,12 +214,12 @@ public class Client implements Node {
 		if (DEBUG) { System.out.println("end Client handleControllerRegisterResponse"); }
 	}
 	
-	private void sendClientChunkServerRequestToController(String filename, int chunkNumber) {
+	private void sendClientChunkServerRequestToController(String filename, int chunkNumber, long timestamp) {
 		if (DEBUG) { System.out.println("begin Client sendClientChunkServerRequestToController"); }
 		//NodeInformation client = new NodeInformation(this.localHostIPAddress, this.localHostPortNumber);
 		
 		try {
-			ClientChunkServerRequestToController chunkServersRequest = new ClientChunkServerRequestToController(clientNodeInformation, chunkNumber, filename);
+			ClientChunkServerRequestToController chunkServersRequest = new ClientChunkServerRequestToController(clientNodeInformation, chunkNumber, filename, timestamp);
 			this.clientSender.sendData(chunkServersRequest.getBytes());
 
 		} catch (IOException ioe) {
@@ -227,11 +228,7 @@ public class Client implements Node {
 		
 		if (DEBUG) { System.out.println("end Client sendClientChunkServerRequestToController"); }
 		// current idea on how to implement this:
-		
-		// step 1: create a class that splits the file up into chunks with the corresponding bytes for said chunk. Store that in some global variable here.
-		
-		// step 2: Once that object has been created, send the 0 chunk to the controller to request for servers for that chunk. Perhaps set some global variable at this point to not allow writing anything in the command line
-		
+
 		// step 3: in the metadata of what is sent back and forth, need to include the chunk number that we're on and the total number of chunks
 		
 		// step 4: controller sends chunk servers, listen in client for those to come in and it will say which chunk it is sending. Use that to get the correct byte data from the split file and send to one chunk server along with a list of other chunk servers
@@ -251,6 +248,7 @@ public class Client implements Node {
 		ArrayList<NodeInformation> chunkServersNodeInfoList = clientChunkServersFromController.getChunkServersNodeInfoList();
 		int chunkNumber = clientChunkServersFromController.getChunkNumber();
 		String filename = clientChunkServersFromController.getFilename();
+		long timestamp = clientChunkServersFromController.getTimestamp();
 		
 		if (!chunkServersNodeInfoList.isEmpty()) {
 			NodeInformation firstClient = chunkServersNodeInfoList.remove(0);
@@ -260,7 +258,7 @@ public class Client implements Node {
 				try {
 					Socket chunkServer = new Socket(firstClient.getNodeIPAddress(), firstClient.getNodePortNumber());
 
-					ClientSendChunkToChunkServer chunksToChunkServer = new ClientSendChunkToChunkServer(chunkServersNodeInfoList.size(), chunkServersNodeInfoList, chunksToSend, chunkNumber, filename);
+					ClientSendChunkToChunkServer chunksToChunkServer = new ClientSendChunkToChunkServer(chunkServersNodeInfoList.size(), chunkServersNodeInfoList, chunksToSend, chunkNumber, filename, timestamp);
 					TCPSender chunkSender = new TCPSender(chunkServer);
 					chunkSender.sendData(chunksToChunkServer.getBytes());
 					
@@ -271,14 +269,18 @@ public class Client implements Node {
 					// not the last chunk, need to prep the next chunk and request more chunk servers from the controller
 					} else {
 						chunkNumber++;
-						sendClientChunkServerRequestToController(filename, chunkNumber);
+						sendClientChunkServerRequestToController(filename, chunkNumber, timestamp);
 					}
 				} catch (UnknownHostException e) {
 					e.printStackTrace();
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
+			} else {
+				System.out.println("Data to pull from list is empty.");
 			}
+		} else {
+			System.out.println("No Chunk Servers available.");
 		}
 		if (DEBUG) { System.out.println("end Client handleControllerChunkServersResponse"); }
 	}
@@ -295,6 +297,8 @@ public class Client implements Node {
 			
 			while ((fileLength = bis.read(chunkSizeBytes)) > -1) {
 				chunkSizeBytes = Arrays.copyOf(chunkSizeBytes, fileLength);
+				
+				// add the bytes to the ArrayList that holds all of the bytes for the file
 				filesAsBytesList.add(chunkSizeBytes);
 				chunkSizeBytes = new byte[SIZE_OF_CHUNK];
 			}
