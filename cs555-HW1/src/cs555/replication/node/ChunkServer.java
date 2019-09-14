@@ -28,6 +28,8 @@ public class ChunkServer implements Node {
 	private NodeInformation controllerNodeInformation;
 	private String localHostIPAddress;
 	private int localHostPortNumber;
+	// may not need this, instead may need something for storing the location of where data is and a file name. doesn't matter which client requests the data,
+	// just need to send the correct file. will include the client node in the message to the chunk server
 	private HashMap<NodeInformation, TCPSender> clientNodesMap;
 	private final String FILE_LOCATION = "/tmp/data";
 	private TCPReceiverThread chunkServerTCPReceiverThread;

@@ -11,18 +11,19 @@ import java.util.ArrayList;
 
 import cs555.replication.util.NodeInformation;
 
+public class ClientSendChunkToChunkServer implements Event {
 
-public class ControllerChunkServersResponseToClient implements Event {
-
-	private final int type = Protocol.CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT;
-	private int replicationLevel;
+	private final int type = Protocol.CLIENT_SEND_CHUNK_TO_CHUNKSERVER;
+	int replicationLevel;
 	private ArrayList<NodeInformation> chunkServersNodeInfoList;
+	private byte[] chunkBytes;
 	private int chunkNumber;
 	private String filename;
 	
-	public ControllerChunkServersResponseToClient(int replicationLevel, ArrayList<NodeInformation> chunkServersNodeInfoList, int chunkNumber, String filename) {
+	public ClientSendChunkToChunkServer(int replicationLevel, ArrayList<NodeInformation> chunkServersNodeInfoList, byte[] chunkBytes, int chunkNumber, String filename) {
 		this.replicationLevel = replicationLevel;
 		this.chunkServersNodeInfoList = chunkServersNodeInfoList;
+		this.chunkBytes = chunkBytes;
 		this.chunkNumber = chunkNumber;
 		this.filename = filename;
 	}
@@ -32,18 +33,19 @@ public class ControllerChunkServersResponseToClient implements Event {
 	 * type
 	 * replicationLevel
 	 * chunkServersNodeInfoList
+	 * chunkBytes[]
 	 * chunkNumber
 	 * filename
 	 * @throws IOException 
 	 */
-	public ControllerChunkServersResponseToClient(byte[] marshalledBytes) throws IOException {
+	public ClientSendChunkToChunkServer(byte[] marshalledBytes) throws IOException {
 		ByteArrayInputStream baInputStream = new ByteArrayInputStream(marshalledBytes);
 		DataInputStream din = new DataInputStream(new BufferedInputStream(baInputStream));
 		
 		int type = din.readInt();
 		
-		if (type != Protocol.CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT) {
-			System.out.println("Invalid Message Type for ControllerChunkServersResponseToClient");
+		if (type != Protocol.CLIENT_SEND_CHUNK_TO_CHUNKSERVER) {
+			System.out.println("Invalid Message Type for ClientSendChunkToChunkServer");
 			return;
 		}
 		
@@ -64,6 +66,12 @@ public class ControllerChunkServersResponseToClient implements Event {
 			this.chunkServersNodeInfoList.add(new NodeInformation(cSNIBytes));
 		}
 		
+		// chunkBytes
+		int chunkBytesLength = din.readInt();
+		byte[] chunkBytes = new byte[chunkBytesLength];
+		din.readFully(chunkBytes);
+		this.chunkBytes = chunkBytes;
+		
 		// chunkNumber
 		int chunkNumber = din.readInt();
 		this.chunkNumber = chunkNumber;
@@ -78,7 +86,7 @@ public class ControllerChunkServersResponseToClient implements Event {
 		baInputStream.close();
 		din.close();
 	}
-
+	
 	@Override
 	public int getType() {
 		return this.type;
@@ -102,6 +110,11 @@ public class ControllerChunkServersResponseToClient implements Event {
 			dout.write(cSNIBytes);
 		}
 		
+		//chunkBytes
+		int chunkBytesLength = this.chunkBytes.length;
+		dout.writeInt(chunkBytesLength);
+		dout.write(chunkBytes);
+		
 		// chunkNumber
 		dout.writeInt(this.chunkNumber);
 
@@ -110,7 +123,7 @@ public class ControllerChunkServersResponseToClient implements Event {
 		int filenameLength = filenameBytes.length;
 		dout.writeInt(filenameLength);
 		dout.write(filenameBytes);
-		
+				
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
@@ -118,21 +131,21 @@ public class ControllerChunkServersResponseToClient implements Event {
 		
 		return marshalledBytes;
 	}
-	
-	public int getReplicationLevel() {
-		return this.replicationLevel;
-	}
 
 	public ArrayList<NodeInformation> getChunkServersNodeInfoList() {
 		return this.chunkServersNodeInfoList;
 	}
 
+	public byte[] getChunkBytes() {
+		return this.chunkBytes;
+	}
+
 	public int getChunkNumber() {
 		return this.chunkNumber;
 	}
-	
+
 	public String getFilename() {
 		return this.filename;
 	}
-	
+
 }

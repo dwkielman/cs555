@@ -236,7 +236,7 @@ public class Controller implements Node {
 					}
 					
 					// put the chunkserver nodeinformation into a message and send to client
-					ControllerChunkServersResponseToClient chunkServersResponse = new ControllerChunkServersResponseToClient(REPLICATION_LEVEL, chunkServers);
+					ControllerChunkServersResponseToClient chunkServersResponse = new ControllerChunkServersResponseToClient(REPLICATION_LEVEL, chunkServers, chunkNumber, filename);
 
 					this.clientNodesMap.get(clientNode).sendData(chunkServersResponse.getBytes());
 				} catch  (IOException ioe) {

@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Scanner;
 
 import cs555.replication.transport.TCPReceiverThread;
@@ -15,6 +17,8 @@ import cs555.replication.transport.TCPServerThread;
 import cs555.replication.util.NodeInformation;
 import cs555.replication.wireformats.ClientChunkServerRequestToController;
 import cs555.replication.wireformats.ClientRegisterRequestToController;
+import cs555.replication.wireformats.ClientSendChunkToChunkServer;
+import cs555.replication.wireformats.ControllerChunkServersResponseToClient;
 import cs555.replication.wireformats.ControllerRegisterResponseToClient;
 import cs555.replication.wireformats.Event;
 import cs555.replication.wireformats.Protocol;
@@ -35,6 +39,9 @@ public class Client implements Node {
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
 	private TCPSender clientSender;
+	private boolean accessUserInput;
+	private ArrayList<byte[]> fileIntoChunks;
+	private static NodeInformation clientNodeInformation;
 	
 	private static final int SIZE_OF_CHUNK = 1024 * 64;
 	
@@ -46,6 +53,8 @@ public class Client implements Node {
 			this.tCPServerThread = serverThread;
 			this.thread = new Thread(this.tCPServerThread);
 			this.thread.start();
+			this.accessUserInput = true;
+			this.fileIntoChunks = new ArrayList<byte[]>();
 			
 			if (DEBUG) { System.out.println("My server port number is: " + this.localHostPortNumber); }
 			
@@ -62,12 +71,15 @@ public class Client implements Node {
 	@Override
 	public void onEvent(Event event) {
 		int eventType = event.getType();
-		if (DEBUG) { System.out.println("Event " + eventType + " Passed to ChunkServer."); }
+		if (DEBUG) { System.out.println("Event " + eventType + " Passed to Client."); }
 		switch(eventType) {
 			// REGISTER_RESPONSE = 6001
 			case Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CLIENT:
 				handleControllerRegisterResponse(event);	
 				break;
+			// CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT = 6002
+			case Protocol.CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT:
+				handleControllerChunkServersResponse(event);
 			default:
 				System.out.println("Invalid Event to Node.");
 				return;
@@ -108,43 +120,51 @@ public class Client implements Node {
 		}
 		
 		Client client = new Client(controllerIPAddress, controllerPortNumber);
+		clientNodeInformation = new NodeInformation(client.localHostIPAddress, client.localHostPortNumber);
 		handleUserInput(client);
 	}
 	
 	private static void handleUserInput(Client client) {
-		Scanner scan = new Scanner(System.in);
 		
-		System.out.println("Ready for input.");
-        while(true) {
-            System.out.println("Options:\n[S] Store a File\n[R] Read a File\n[Q] Quit\nPlease type your request: ");
-            String input = scan.nextLine();
-            
-            input = input.toUpperCase();
-            switch (input) {
-            	case "S":
-            		if (DEBUG) { System.out.println("User selected Store a file."); }
-            		String filename;
-            		System.out.println("Enter the name of the file that you wish to store: ");
-					filename = scan.nextLine();
-					File file = new File(filename);
-					if (file.exists()) {
-						client.sendClientChunkServerRequestToController(file);
-					} else {
-						System.out.println("Command unrecognized. Please enter a valid input.");
-					}
-            		
-            		break;
-            	case "R":
-            		if (DEBUG) { System.out.println("User selected Read a file."); }
-            		break;
-            	case "Q":
-            		if (DEBUG) { System.out.println("User selected Quit."); }
-            		System.out.println("Quitting program. Goodbye.");
-            		System.exit(1);
-            	default:
-            		System.out.println("Command unrecognized. Please enter a valid input.");
-            }
-        }
+		if (client.accessUserInput) {
+			Scanner scan = new Scanner(System.in);
+			
+			System.out.println("Ready for input.");
+	        while(true) {
+	            System.out.println("Options:\n[S] Store a File\n[R] Read a File\n[Q] Quit\nPlease type your request: ");
+	            String input = scan.nextLine();
+	            
+	            input = input.toUpperCase();
+	            switch (input) {
+	            	case "S":
+	            		if (DEBUG) { System.out.println("User selected Store a file."); }
+	            		String filename;
+	            		System.out.println("Enter the name of the file that you wish to store: ");
+						filename = scan.nextLine();
+						File file = new File(filename);
+						if (file.exists()) {
+							client.accessUserInput = false;
+							int chunkNumber = 0;
+							client.fileIntoChunks = splitFileIntoBytes(file, chunkNumber);
+							client.sendClientChunkServerRequestToController(filename, chunkNumber);
+						} else {
+							System.out.println("Command unrecognized. Please enter a valid input.");
+						}
+	            		
+	            		break;
+	            	case "R":
+	            		if (DEBUG) { System.out.println("User selected Read a file."); }
+	            		client.accessUserInput = false;
+	            		break;
+	            	case "Q":
+	            		if (DEBUG) { System.out.println("User selected Quit."); }
+	            		System.out.println("Quitting program. Goodbye.");
+	            		System.exit(1);
+	            	default:
+	            		System.out.println("Command unrecognized. Please enter a valid input.");
+	            }
+	        }
+		}
 	}
 	
 	private void connectToController() {
@@ -176,7 +196,7 @@ public class Client implements Node {
 	}
 	
 	private void handleControllerRegisterResponse(Event event) {
-		if (DEBUG) { System.out.println("begin ChunkServer handleChunkServerRegisterResponse"); }
+		if (DEBUG) { System.out.println("begin Client handleControllerRegisterResponse"); }
 		ControllerRegisterResponseToClient clientRegisterResponse = (ControllerRegisterResponseToClient) event;
 		if (DEBUG) { System.out.println("MessagingNode got a message type: " + clientRegisterResponse.getType()); }
 		
@@ -190,16 +210,22 @@ public class Client implements Node {
             System.out.println(String.format("Message: %s", clientRegisterResponse.getAdditionalInfo()));
             System.exit(0);
 		}
-		if (DEBUG) { System.out.println("end ChunkServer handleChunkServerRegisterResponse"); }
+		if (DEBUG) { System.out.println("end Client handleControllerRegisterResponse"); }
 	}
 	
-	private void sendClientChunkServerRequestToController(File file) {
-		byte[] chunkSizeBytes = new byte[SIZE_OF_CHUNK];
-		int fileLength = 0;
-		int chunkNumber = 0;
+	private void sendClientChunkServerRequestToController(String filename, int chunkNumber) {
+		if (DEBUG) { System.out.println("begin Client sendClientChunkServerRequestToController"); }
+		//NodeInformation client = new NodeInformation(this.localHostIPAddress, this.localHostPortNumber);
 		
-		NodeInformation client = new NodeInformation(this.localHostIPAddress, this.localHostPortNumber);
+		try {
+			ClientChunkServerRequestToController chunkServersRequest = new ClientChunkServerRequestToController(clientNodeInformation, chunkNumber, filename);
+			this.clientSender.sendData(chunkServersRequest.getBytes());
+
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+		}
 		
+		if (DEBUG) { System.out.println("end Client sendClientChunkServerRequestToController"); }
 		// current idea on how to implement this:
 		
 		// step 1: create a class that splits the file up into chunks with the corresponding bytes for said chunk. Store that in some global variable here.
@@ -215,22 +241,69 @@ public class Client implements Node {
 		// step 6: repeat process until chunk number == total number of chunks. In that case, file has been stored and can set the command line variable to true again to allow interfacing
 		
 		// so basically, everything below needs to be put into its own file to split the object then stored here. Do that next time and get working on all of this
+	}
+	
+	private void handleControllerChunkServersResponse(Event event) {
+		if (DEBUG) { System.out.println("begin Client handleControllerChunkServersResponse"); }
+		ControllerChunkServersResponseToClient clientChunkServersFromController = (ControllerChunkServersResponseToClient) event;
+		if (DEBUG) { System.out.println("MessagingNode got a message type: " + clientChunkServersFromController.getType()); }
+		
+		ArrayList<NodeInformation> chunkServersNodeInfoList = clientChunkServersFromController.getChunkServersNodeInfoList();
+		int chunkNumber = clientChunkServersFromController.getChunkNumber();
+		String filename = clientChunkServersFromController.getFilename();
+		
+		if (!chunkServersNodeInfoList.isEmpty()) {
+			NodeInformation firstClient = chunkServersNodeInfoList.remove(0);
+			
+			if (!fileIntoChunks.isEmpty()) {
+				byte[] chunksToSend = fileIntoChunks.get(chunkNumber);
+				try {
+					Socket chunkServer = new Socket(firstClient.getNodeIPAddress(), firstClient.getNodePortNumber());
+
+					ClientSendChunkToChunkServer chunksToChunkServer = new ClientSendChunkToChunkServer(chunkServersNodeInfoList.size(), chunkServersNodeInfoList, chunksToSend, chunkNumber, filename);
+					TCPSender chunkSender = new TCPSender(chunkServer);
+					chunkSender.sendData(chunksToChunkServer.getBytes());
+					
+					// last chunk was just sent, clear everything and reset for input
+					if (chunkNumber == fileIntoChunks.size()) {
+						this.accessUserInput = true;
+						fileIntoChunks = new ArrayList<byte[]>();
+					// not the last chunk, need to prep the next chunk and request more chunk servers from the controller
+					} else {
+						chunkNumber++;
+						sendClientChunkServerRequestToController(filename, chunkNumber);
+					}
+				} catch (UnknownHostException e) {
+					e.printStackTrace();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+		if (DEBUG) { System.out.println("end Client handleControllerChunkServersResponse"); }
+	}
+	
+	private static ArrayList<byte[]> splitFileIntoBytes(File file, int chunkNumber) {
+		ArrayList<byte[]> filesAsBytesList = new ArrayList<byte[]>();
+		
+		byte[] chunkSizeBytes = new byte[SIZE_OF_CHUNK];
+		
 		
 		try {
 			BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file));
+			int fileLength = 0;
 			
-			while ((fileLength = bis.read(chunkSizeBytes)) >= 0) {
-				ClientChunkServerRequestToController chunkServersRequest = new ClientChunkServerRequestToController(client, chunkNumber, file.getName());
-				
-				this.clientSender.sendData(chunkServersRequest.getBytes());
-				
+			while ((fileLength = bis.read(chunkSizeBytes)) > -1) {
+				chunkSizeBytes = Arrays.copyOf(chunkSizeBytes, fileLength);
+				filesAsBytesList.add(chunkSizeBytes);
+				chunkSizeBytes = new byte[SIZE_OF_CHUNK];
 			}
-			
-		} catch (IOException ioe) {
+		
+		} catch  (IOException ioe) {
 			ioe.printStackTrace();
 		}
+		
+		return filesAsBytesList;
 	}
-	
-	
 		
 }
