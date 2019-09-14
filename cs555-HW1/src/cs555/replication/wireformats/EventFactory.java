@@ -50,6 +50,9 @@ public class EventFactory {
 				case Protocol.CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER:
 					event = new ChunkServerRegisterRequestToController(marshalledBytes);
 					break;
+				// CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER = 7001
+				case Protocol.CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER:
+					event = new ChunkServerSendChunkToLastChunkServer(marshalledBytes);
 				// CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8000
 				case Protocol.CLIENT_REGISTER_REQUEST_TO_CONTROLLER:
 					event = new ClientRegisterRequestToController(marshalledBytes);

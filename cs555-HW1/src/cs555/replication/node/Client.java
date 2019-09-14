@@ -251,12 +251,12 @@ public class Client implements Node {
 		long timestamp = clientChunkServersFromController.getTimestamp();
 		
 		if (!chunkServersNodeInfoList.isEmpty()) {
-			NodeInformation firstClient = chunkServersNodeInfoList.remove(0);
+			NodeInformation firstChunkServer = chunkServersNodeInfoList.remove(0);
 			
 			if (!fileIntoChunks.isEmpty()) {
 				byte[] chunksToSend = fileIntoChunks.get(chunkNumber);
 				try {
-					Socket chunkServer = new Socket(firstClient.getNodeIPAddress(), firstClient.getNodePortNumber());
+					Socket chunkServer = new Socket(firstChunkServer.getNodeIPAddress(), firstChunkServer.getNodePortNumber());
 
 					ClientSendChunkToChunkServer chunksToChunkServer = new ClientSendChunkToChunkServer(chunkServersNodeInfoList.size(), chunkServersNodeInfoList, chunksToSend, chunkNumber, filename, timestamp);
 					TCPSender chunkSender = new TCPSender(chunkServer);

@@ -16,6 +16,7 @@ import cs555.replication.transport.TCPServerThread;
 import cs555.replication.util.Metadata;
 import cs555.replication.util.NodeInformation;
 import cs555.replication.wireformats.ChunkServerRegisterRequestToController;
+import cs555.replication.wireformats.ChunkServerSendChunkToLastChunkServer;
 import cs555.replication.wireformats.ClientSendChunkToChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToChunkServer;
 import cs555.replication.wireformats.Event;
@@ -78,6 +79,10 @@ public class ChunkServer implements Node {
 			// CONTROLLER_REGISTER_RESPONSE_TO_CHUNKSERVER = 6000
 			case Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CHUNKSERVER:
 				handleChunkServerRegisterResponse(event);	
+				break;
+			// CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER = 7001
+			case Protocol.CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER:
+				handleLastDataReceived(event);
 				break;
 			// CLIENT_SEND_CHUNK_TO_CHUNKSERVER = 8002
 			case Protocol.CLIENT_SEND_CHUNK_TO_CHUNKSERVER:
@@ -190,7 +195,6 @@ public class ChunkServer implements Node {
 			chunkNumbers.add(chunkNumber);
 			filesWithChunkNumberMap.put(filename, chunkNumbers);
 			saveFile(filename, chunkData, chunkNumber, version);
-			// save the new file
 		} else {
 		// file already exists on the server, could be a new chunk number or one that already exists
 			chunkNumbers = filesWithChunkNumberMap.get(filename);
@@ -217,11 +221,89 @@ public class ChunkServer implements Node {
 				}
 			}
 		}
+		
+		// send the data to the other chunkServers if there are any contained here
+		ArrayList<NodeInformation> chunkServers = chunkDataReceived.getChunkServersNodeInfoList();
+		
+		// more than 1 chunkServers requires more chunkServer info
+		if (chunkServers.isEmpty()) {
+			System.out.println("Error: no chunkServers left but need to still send.");
+		} else {
+			NodeInformation firstChunkServer = chunkServers.remove(0);
+			
+			try {
+				Socket chunkServer = new Socket(firstChunkServer.getNodeIPAddress(), firstChunkServer.getNodePortNumber());
+				
+				// more chunkServers to send to so use same protocol with chunk servers
+				if (!chunkServers.isEmpty()) {
+					ClientSendChunkToChunkServer chunksToChunkServer = new ClientSendChunkToChunkServer(chunkServers.size(), chunkServers, chunkData, chunkNumber, filename, timestamp);
+					TCPSender chunkSender = new TCPSender(chunkServer);
+					chunkSender.sendData(chunksToChunkServer.getBytes());
+					
+				} else if (chunkServers.size() == 1) {
+					// only one chunkServer left so use different protocol
+					ChunkServerSendChunkToLastChunkServer chunksToLastChunkServer = new ChunkServerSendChunkToLastChunkServer(chunkData, chunkNumber, filename, timestamp);
+					TCPSender chunkSender = new TCPSender(chunkServer);
+					chunkSender.sendData(chunksToLastChunkServer.getBytes());
+				} 
+				
+			} catch (UnknownHostException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
 		if (DEBUG) { System.out.println("end ChunkServer handleChunkDataReceieved"); }
 	}
 	
+	private void handleLastDataReceived(Event event) {
+		if (DEBUG) { System.out.println("begin ChunkServer handleLastDataReceived"); }
+		ChunkServerSendChunkToLastChunkServer chunkDataReceived = (ChunkServerSendChunkToLastChunkServer) event;
+		
+		String filename = chunkDataReceived.getFilename();
+		int chunkNumber = chunkDataReceived.getChunkNumber();
+		long timestamp = chunkDataReceived.getTimestamp();
+		byte[] chunkData = chunkDataReceived.getChunkBytes();
+		int version = 1;
+		ArrayList<Integer> chunkNumbers = new ArrayList<Integer>();
+		
+		// file is not currently stored on the server, need to add it for the first time
+		if (!filesWithChunkNumberMap.containsKey(filename)) {
+			chunkNumbers.add(chunkNumber);
+			filesWithChunkNumberMap.put(filename, chunkNumbers);
+			saveFile(filename, chunkData, chunkNumber, version);
+		} else {
+		// file already exists on the server, could be a new chunk number or one that already exists
+			chunkNumbers = filesWithChunkNumberMap.get(filename);
+			
+			// if the chunkNumber isn't already stored, then add the new chunk data to the existing filename
+			if (!chunkNumbers.contains(chunkNumber)) {
+				filesWithChunkNumberMap.get(filename).add(chunkNumber);
+				saveFile(filename, chunkData, chunkNumber, version);
+			} else {
+				// make sure that the timestamp is more recent than the one that is currently stored on the server
+				// make sure we have metadata for the file before trying to update it
+				String metadataFilename = filename + "_chunk" + chunkNumber;
+				if (filesWithMetadataMap.containsKey(metadataFilename) ) {
+					Metadata metadata = filesWithMetadataMap.get(metadataFilename);
+					long metadataTimestamp = metadata.getTimestamp();
+					
+					// metadata is older than the new file
+					if (metadataTimestamp < timestamp) {
+						int newVersionNumber = metadata.getVersionInfoNumber() + 1;
+						saveFile(filename, chunkData, chunkNumber, newVersionNumber);
+					} else {
+						System.out.println("No action taken, file sent is older than the previous version.");
+					}
+				}
+			}
+		}
+		
+		if (DEBUG) { System.out.println("end ChunkServer handleLastDataReceived"); }
+	}
+	
 	private void saveFile(String fileName, byte[] chunkData, int chunkNumber, int versionNumber) {
-		String fileAbsolutePath = FILE_LOCATION + fileName;
+		//String fileAbsolutePath = FILE_LOCATION + fileName;
 		String path = FILE_LOCATION + fileName + "_chunk" + chunkNumber;
 		File fileLocationToBeSaved = new File(path.substring(0, path.lastIndexOf("/")));
 		
