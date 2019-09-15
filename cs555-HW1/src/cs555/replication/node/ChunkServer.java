@@ -88,6 +88,10 @@ public class ChunkServer implements Node {
 			case Protocol.CLIENT_SEND_CHUNK_TO_CHUNKSERVER:
 				handleChunkDataReceieved(event);
 				break;
+			// CLIENT_READ_REQUEST_TO_CHUNKSERVER = 8004
+			case Protocol.CLIENT_READ_REQUEST_TO_CHUNKSERVER:
+				handleClientRequestToReadFromChunkServer(event);
+				break;
 			default:
 				System.out.println("Invalid Event to Node.");
 				return;
@@ -300,6 +304,22 @@ public class ChunkServer implements Node {
 		}
 		
 		if (DEBUG) { System.out.println("end ChunkServer handleLastDataReceived"); }
+	}
+	
+	private void handleClientRequestToReadFromChunkServer(Event event) {
+		if (DEBUG) { System.out.println("begin ChunkServer handleClientRequestToReadFromChunkServer"); }
+		
+		// stopping here for now, need to get the info from request sent from the client, find the data, validate that it is correct, then send it TO the client
+		
+		// if the data is invalid then need to send some error message/status that the data is wrong to both the client and to the controller
+		
+		// controller should remove this node from the valid nodes for this chunk of the data and send another chunkserver to the client to get the correct data
+		
+		// should the client attempt to heal the file at this point? or wait until later?
+		
+		
+		
+		if (DEBUG) { System.out.println("end ChunkServer handleClientRequestToReadFromChunkServer"); }
 	}
 	
 	private void saveFile(String fileName, byte[] chunkData, int chunkNumber, int versionNumber) {

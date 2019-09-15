@@ -13,13 +13,13 @@ import cs555.replication.util.NodeInformation;
 public class ClientRequestToReadFromChunkServer implements Event {
 
 	private final int type = Protocol.CLIENT_READ_REQUEST_TO_CHUNKSERVER;
-	private NodeInformation clienNodeInformation;
+	private NodeInformation clientNodeInformation;
 	private int chunkNumber;
 	private String fileName;
 	private int totalNumberOfChunks;
 	
 	public ClientRequestToReadFromChunkServer(NodeInformation nodeInformation, int chunkNumber, String fileName, int totalNumberOfChunks) {
-		this.clienNodeInformation = nodeInformation;
+		this.clientNodeInformation = nodeInformation;
 		this.chunkNumber = chunkNumber;
 		this.fileName = fileName;
 		this.totalNumberOfChunks = totalNumberOfChunks;
@@ -49,7 +49,7 @@ public class ClientRequestToReadFromChunkServer implements Event {
 		int nodeInformationLength = din.readInt();
 		byte[] nodeInformationBytes = new byte[nodeInformationLength];
 		din.readFully(nodeInformationBytes);
-		this.clienNodeInformation = new NodeInformation(nodeInformationBytes);
+		this.clientNodeInformation = new NodeInformation(nodeInformationBytes);
 		
 		// chunkNumber
 		// numberOfPeerMessagingNodes
@@ -85,7 +85,7 @@ public class ClientRequestToReadFromChunkServer implements Event {
 		dout.writeInt(this.type);
 		
 		// NodeInformation
-		byte[] nodeInformationBytes = this.clienNodeInformation.getBytes();
+		byte[] nodeInformationBytes = this.clientNodeInformation.getBytes();
 		int nodeInformationLength = nodeInformationBytes.length;
 		dout.writeInt(nodeInformationLength);
 		dout.write(nodeInformationBytes);
@@ -113,8 +113,8 @@ public class ClientRequestToReadFromChunkServer implements Event {
 		return this.chunkNumber;
 	}
 	
-	public NodeInformation getClienNodeInformation() {
-		return this.clienNodeInformation;
+	public NodeInformation getClientNodeInformation() {
+		return this.clientNodeInformation;
 	}
 
 	public String getFilename() {
