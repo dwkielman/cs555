@@ -9,6 +9,7 @@ public class Protocol {
 	public static final int CONTROLLER_REGISTER_RESPONSE_TO_CHUNKSERVER = 6000;
 	public static final int CONTROLLER_REGISTER_RESPONSE_TO_CLIENT = 6001;
 	public static final int CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT = 6002;
+	public static final int CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT = 6003;
 	
 	public static final int CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER = 7000;
 	public static final int CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER = 7001;
@@ -17,6 +18,7 @@ public class Protocol {
 	public static final int CLIENT_CHUNKSERVER_REQUEST_TO_CONTROLLER = 8001;
 	public static final int CLIENT_SEND_CHUNK_TO_CHUNKSERVER = 8002;
 	public static final int CLIENT_READ_REQUEST_TO_CONTROLLER = 8003;
+	public static final int CLIENT_READ_REQUEST_TO_CHUNKSERVER = 8004;
 	
 	/**
 	public static final int 

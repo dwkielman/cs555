@@ -46,6 +46,10 @@ public class EventFactory {
 				case Protocol.CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT:
 					event = new ControllerChunkServersResponseToClient(marshalledBytes);
 					break;
+				// CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT = 6003
+				case Protocol.CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT:
+					event = new ControllerChunkServerToReadResponseToClient(marshalledBytes);
+					break;
 				// CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER = 7000
 				case Protocol.CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER:
 					event = new ChunkServerRegisterRequestToController(marshalledBytes);
@@ -68,6 +72,10 @@ public class EventFactory {
 				// CLIENT_READ_REQUEST_TO_CONTROLLER = 8003
 				case Protocol.CLIENT_READ_REQUEST_TO_CONTROLLER:
 					event = new ClientReadFileRequestToController(marshalledBytes);
+					break;
+				// CLIENT_READ_REQUEST_TO_CHUNKSERVER = 8004
+				case Protocol.CLIENT_READ_REQUEST_TO_CHUNKSERVER:
+					event = new ClientRequestToReadFromChunkServer(marshalledBytes);
 					break;
 				default:
 					System.out.println("Invalid Message Type");

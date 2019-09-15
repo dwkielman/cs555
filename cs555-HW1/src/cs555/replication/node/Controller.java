@@ -19,6 +19,7 @@ import cs555.replication.wireformats.ChunkServerRegisterRequestToController;
 import cs555.replication.wireformats.ClientChunkServerRequestToController;
 import cs555.replication.wireformats.ClientReadFileRequestToController;
 import cs555.replication.wireformats.ClientRegisterRequestToController;
+import cs555.replication.wireformats.ControllerChunkServerToReadResponseToClient;
 import cs555.replication.wireformats.ControllerChunkServersResponseToClient;
 import cs555.replication.wireformats.ControllerRegisterResponseToChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToClient;
@@ -41,7 +42,7 @@ public class Controller implements Node {
 	private HashMap<NodeInformation, TCPSender> clientNodesMap;
 	private ArrayList<HeartbeatMetadata> chunkServerHeartbeatMetadaList;
 	private HashMap<String, HashMap<Integer, ArrayList<HeartbeatMetadata>>> filesOnChunkServersMap;
-	private final int REPLICATION_LEVEL = 3;
+	private static final int REPLICATION_LEVEL = 3;
 	
 	private Controller(int portNumber) {
 		this.portNumber = portNumber;
@@ -110,6 +111,7 @@ public class Controller implements Node {
 				break;
 			// CLIENT_READ_REQUEST_TO_CONTROLLER = 8003
 			case Protocol.CLIENT_READ_REQUEST_TO_CONTROLLER:
+				handleClientReadRequest(event);
 				break;
 			default:
 				System.out.println("Invalid Event to Node.");
@@ -253,24 +255,35 @@ public class Controller implements Node {
 		
 		ClientReadFileRequestToController readRequest = (ClientReadFileRequestToController) event;
 		String filename = readRequest.getFilename();
+		NodeInformation clientNode = readRequest.getClienNodeInformation();
+		int chunkNumber = readRequest.getChunkNumber();
 		
-		// make sure that the file is stored on a chunkserver first
-		if (filesOnChunkServersMap.containsKey(filename)) {
-			// get the metadata for the chunkservers that hold the first value of the file
-			ArrayList<HeartbeatMetadata> HeartbeatMetadataList = filesOnChunkServersMap.get(filename).get(0);
-			
-			// prep chunkServers to send to Client
-			ArrayList<NodeInformation> chunkServers = new ArrayList<NodeInformation>();
-			
-			for (HeartbeatMetadata hbm : HeartbeatMetadataList) {
-				chunkServers.add(hbm.getNodeInformation());
-			}
-			
-			// put the chunkserver nodeinformation into a message and send to client
-			
-		} else {
+		try {
+			// make sure that the file is stored on a chunkserver first
+			if (filesOnChunkServersMap.containsKey(filename)) {
+				// get the metadata for the chunkservers that hold the first value of the file
+				ArrayList<HeartbeatMetadata> HeartbeatMetadataList = filesOnChunkServersMap.get(filename).get(chunkNumber);
+				
+				int totalNumberOfFiles = filesOnChunkServersMap.get(filename).values().stream().mapToInt(List::size).sum();
+				
+				// get the first metadata information stored for the file and try that one
+				if (!HeartbeatMetadataList.isEmpty()) {
+					NodeInformation chunkServer = HeartbeatMetadataList.get(0).getNodeInformation();
+					
+					// put the chunkserver nodeinformation into a message and send to client
+					ControllerChunkServerToReadResponseToClient controllerReponse = new ControllerChunkServerToReadResponseToClient(chunkServer, chunkNumber, filename, totalNumberOfFiles);
+					
+					this.clientNodesMap.get(clientNode).sendData(controllerReponse.getBytes());
+					
+				} else {
+					System.out.println("No ChunkServers available to read the file from.");
+				}
+			} else {
 			System.out.println("File is not stored on any server.");
-		}
+			}
+		} catch  (IOException ioe) {
+			ioe.printStackTrace();
+		} 
 		
 		if (DEBUG) { System.out.println("end Controller handleClientReadRequest"); }
 	}

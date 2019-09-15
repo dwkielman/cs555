@@ -10,35 +10,38 @@ import java.io.IOException;
 
 import cs555.replication.util.NodeInformation;
 
-public class ClientReadFileRequestToController implements Event {
+public class ControllerChunkServerToReadResponseToClient implements Event {
 
-	private final int type = Protocol.CLIENT_READ_REQUEST_TO_CONTROLLER;
-	private NodeInformation clienNodeInformation;
-	private String fileName;
+	private final int type = Protocol.CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT;
+	private NodeInformation chunkServerNodeInformation;
 	private int chunkNumber;
+	private String fileName;
+	private int totalNumberOfChunks;
 	
-	public ClientReadFileRequestToController(NodeInformation nodeInformation, String fileName, int chunkNumber) {
-		this.clienNodeInformation = nodeInformation;
-		this.fileName = fileName;
+	public ControllerChunkServerToReadResponseToClient(NodeInformation nodeInformation, int chunkNumber, String fileName, int totalNumberOfChunks) {
+		this.chunkServerNodeInformation = nodeInformation;
 		this.chunkNumber = chunkNumber;
+		this.fileName = fileName;
+		this.totalNumberOfChunks = totalNumberOfChunks;
 	}
 	
 	/**
 	 * byte[] construction is as follows:
 	 * type
 	 * NodeInformation
-	 * fileName
 	 * chunkNumber
+	 * fileName
+	 * totalNumberOfChunks
 	 * @throws IOException 
 	 */
-	public ClientReadFileRequestToController(byte[] marshalledBytes) throws IOException {
+	public ControllerChunkServerToReadResponseToClient(byte[] marshalledBytes) throws IOException {
 		ByteArrayInputStream baInputStream = new ByteArrayInputStream(marshalledBytes);
 		DataInputStream din = new DataInputStream(new BufferedInputStream(baInputStream));
 		
 		int type = din.readInt();
 		
-		if (type != Protocol.CLIENT_READ_REQUEST_TO_CONTROLLER) {
-			System.out.println("Invalid Message Type for ClientReadFileRequestToController");
+		if (type != Protocol.CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT) {
+			System.out.println("Invalid Message Type for ClientChunkServerRequestToController");
 			return;
 		}
 		
@@ -46,7 +49,11 @@ public class ClientReadFileRequestToController implements Event {
 		int nodeInformationLength = din.readInt();
 		byte[] nodeInformationBytes = new byte[nodeInformationLength];
 		din.readFully(nodeInformationBytes);
-		this.clienNodeInformation = new NodeInformation(nodeInformationBytes);
+		this.chunkServerNodeInformation = new NodeInformation(nodeInformationBytes);
+		
+		// chunkNumber
+		int chunkNumber = din.readInt();
+		this.chunkNumber = chunkNumber;
 		
 		// Filename
 		int fileNameLength = din.readInt();
@@ -55,10 +62,10 @@ public class ClientReadFileRequestToController implements Event {
 		
 		this.fileName = new String(fileNameBytes);
 		
-		// chunkNumber
-		int chunkNumber = din.readInt();
-		
-		this.chunkNumber = chunkNumber;
+		// totalNumberOfChunks
+		int totalNumberOfChunks = din.readInt();
+
+		this.totalNumberOfChunks = totalNumberOfChunks;
 		
 		baInputStream.close();
 		din.close();
@@ -77,10 +84,13 @@ public class ClientReadFileRequestToController implements Event {
 		dout.writeInt(this.type);
 		
 		// NodeInformation
-		byte[] nodeInformationBytes = this.clienNodeInformation.getBytes();
+		byte[] nodeInformationBytes = this.chunkServerNodeInformation.getBytes();
 		int nodeInformationLength = nodeInformationBytes.length;
 		dout.writeInt(nodeInformationLength);
 		dout.write(nodeInformationBytes);
+		
+		// chunkNumber
+		dout.writeInt(chunkNumber);
 		
 		// Filename
 		byte[] fileNameBytes = this.fileName.getBytes();
@@ -88,8 +98,8 @@ public class ClientReadFileRequestToController implements Event {
 		dout.writeInt(fileNameLength);
 		dout.write(fileNameBytes);
 		
-		// chunkNumber
-		dout.writeInt(this.chunkNumber);
+		// totalNumberOfChunks
+		dout.writeInt(this.totalNumberOfChunks);
 		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
@@ -98,15 +108,20 @@ public class ClientReadFileRequestToController implements Event {
 		return marshalledBytes;
 	}
 	
-	public NodeInformation getClienNodeInformation() {
-		return this.clienNodeInformation;
+	public int getChunkNumber() {
+		return this.chunkNumber;
+	}
+	
+	public NodeInformation getChunkServerNodeInformation() {
+		return this.chunkServerNodeInformation;
 	}
 
 	public String getFilename() {
 		return this.fileName;
 	}
-
-	public int getChunkNumber() {
-		return this.chunkNumber;
+	
+	public int getTotalNumberOfChunks() {
+		return this.totalNumberOfChunks;
 	}
+
 }
