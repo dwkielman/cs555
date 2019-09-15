@@ -65,6 +65,10 @@ public class EventFactory {
 				case Protocol.CLIENT_SEND_CHUNK_TO_CHUNKSERVER:
 					event = new ClientSendChunkToChunkServer(marshalledBytes);
 					break;
+				// CLIENT_READ_REQUEST_TO_CONTROLLER = 8003
+				case Protocol.CLIENT_READ_REQUEST_TO_CONTROLLER:
+					event = new ClientReadFileRequestToController(marshalledBytes);
+					break;
 				default:
 					System.out.println("Invalid Message Type");
 					return null;

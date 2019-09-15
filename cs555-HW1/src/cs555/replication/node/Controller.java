@@ -17,6 +17,7 @@ import cs555.replication.util.HeartbeatMetadata;
 import cs555.replication.util.NodeInformation;
 import cs555.replication.wireformats.ChunkServerRegisterRequestToController;
 import cs555.replication.wireformats.ClientChunkServerRequestToController;
+import cs555.replication.wireformats.ClientReadFileRequestToController;
 import cs555.replication.wireformats.ClientRegisterRequestToController;
 import cs555.replication.wireformats.ControllerChunkServersResponseToClient;
 import cs555.replication.wireformats.ControllerRegisterResponseToChunkServer;
@@ -39,7 +40,6 @@ public class Controller implements Node {
 	private HashMap<NodeInformation, TCPSender> chunkServerNodesMap;
 	private HashMap<NodeInformation, TCPSender> clientNodesMap;
 	private ArrayList<HeartbeatMetadata> chunkServerHeartbeatMetadaList;
-	private ArrayList<String> filenames;
 	private HashMap<String, HashMap<Integer, ArrayList<HeartbeatMetadata>>> filesOnChunkServersMap;
 	private final int REPLICATION_LEVEL = 3;
 	
@@ -48,7 +48,6 @@ public class Controller implements Node {
 		this.chunkServerNodesMap = new HashMap<NodeInformation, TCPSender>();
 		this.chunkServerHeartbeatMetadaList = new ArrayList<HeartbeatMetadata>();
 		this.filesOnChunkServersMap = new HashMap<String, HashMap<Integer, ArrayList<HeartbeatMetadata>>>();
-		this.filenames = new ArrayList<String>();
 		
 		try {
 			TCPServerThread controllerServerThread = new TCPServerThread(this.portNumber, this);
@@ -108,6 +107,9 @@ public class Controller implements Node {
 			// CLIENT_CHUNKSERVER_REQUEST_TO_CONTROLLER = 8001
 			case Protocol.CLIENT_CHUNKSERVER_REQUEST_TO_CONTROLLER:
 				handleClientChunkServerRequest(event);
+				break;
+			// CLIENT_READ_REQUEST_TO_CONTROLLER = 8003
+			case Protocol.CLIENT_READ_REQUEST_TO_CONTROLLER:
 				break;
 			default:
 				System.out.println("Invalid Event to Node.");
@@ -218,8 +220,6 @@ public class Controller implements Node {
 			//HashMap<Integer, ArrayList<HeartbeatMetadata>> chunkServers = this.filesOnChunkServersMap.get(filename);
 			if (chunkServerHeartbeatMetadaList.size() >= REPLICATION_LEVEL) {
 				try {
-					filenames.add(filename);
-					
 					// sort the chunk servers by those with the most space, this should do it in descending order
 					chunkServerHeartbeatMetadaList.sort((h1, h2) -> Long.compare(h2.getFreeSpaceAvailable(), h1.getFreeSpaceAvailable()));
 					ArrayList<HeartbeatMetadata> hbArrayList = chunkServerHeartbeatMetadaList.stream().limit(REPLICATION_LEVEL).collect(Collectors.toCollection(ArrayList::new));
@@ -246,7 +246,33 @@ public class Controller implements Node {
 			}
 			// clean up, add to the relevant collections and be sure to update the free space available on the chunk servers that are being used
 		}
+	}
+	
+	private void handleClientReadRequest(Event event) {
+		if (DEBUG) { System.out.println("begin Controller handleClientReadRequest"); }
 		
+		ClientReadFileRequestToController readRequest = (ClientReadFileRequestToController) event;
+		String filename = readRequest.getFilename();
+		
+		// make sure that the file is stored on a chunkserver first
+		if (filesOnChunkServersMap.containsKey(filename)) {
+			// get the metadata for the chunkservers that hold the first value of the file
+			ArrayList<HeartbeatMetadata> HeartbeatMetadataList = filesOnChunkServersMap.get(filename).get(0);
+			
+			// prep chunkServers to send to Client
+			ArrayList<NodeInformation> chunkServers = new ArrayList<NodeInformation>();
+			
+			for (HeartbeatMetadata hbm : HeartbeatMetadataList) {
+				chunkServers.add(hbm.getNodeInformation());
+			}
+			
+			// put the chunkserver nodeinformation into a message and send to client
+			
+		} else {
+			System.out.println("File is not stored on any server.");
+		}
+		
+		if (DEBUG) { System.out.println("end Controller handleClientReadRequest"); }
 	}
 	
 }

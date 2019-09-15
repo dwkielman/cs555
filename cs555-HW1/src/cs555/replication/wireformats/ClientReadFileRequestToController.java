@@ -10,38 +10,32 @@ import java.io.IOException;
 
 import cs555.replication.util.NodeInformation;
 
-public class ClientChunkServerRequestToController implements Event {
+public class ClientReadFileRequestToController implements Event {
 
-	private final int type = Protocol.CLIENT_CHUNKSERVER_REQUEST_TO_CONTROLLER;
+	private final int type = Protocol.CLIENT_READ_REQUEST_TO_CONTROLLER;
 	private NodeInformation clienNodeInformation;
-	private int chunkNumber;
 	private String fileName;
-	private long timestamp;
 	
-	public ClientChunkServerRequestToController(NodeInformation nodeInformation, int chunkNumber, String fileName, long timestamp) {
+	public ClientReadFileRequestToController(NodeInformation nodeInformation, String fileName) {
 		this.clienNodeInformation = nodeInformation;
-		this.chunkNumber = chunkNumber;
 		this.fileName = fileName;
-		this.timestamp = timestamp;
 	}
 	
 	/**
 	 * byte[] construction is as follows:
 	 * type
 	 * NodeInformation
-	 * chunkNumber
 	 * fileName
-	 * timestamp
 	 * @throws IOException 
 	 */
-	public ClientChunkServerRequestToController(byte[] marshalledBytes) throws IOException {
+	public ClientReadFileRequestToController(byte[] marshalledBytes) throws IOException {
 		ByteArrayInputStream baInputStream = new ByteArrayInputStream(marshalledBytes);
 		DataInputStream din = new DataInputStream(new BufferedInputStream(baInputStream));
 		
 		int type = din.readInt();
 		
-		if (type != Protocol.CLIENT_CHUNKSERVER_REQUEST_TO_CONTROLLER) {
-			System.out.println("Invalid Message Type for ClientChunkServerRequestToController");
+		if (type != Protocol.CLIENT_READ_REQUEST_TO_CONTROLLER) {
+			System.out.println("Invalid Message Type for ClientReadFileRequestToController");
 			return;
 		}
 		
@@ -51,22 +45,12 @@ public class ClientChunkServerRequestToController implements Event {
 		din.readFully(nodeInformationBytes);
 		this.clienNodeInformation = new NodeInformation(nodeInformationBytes);
 		
-		// chunkNumber
-		// numberOfPeerMessagingNodes
-		int chunkNumber = din.readInt();
-		this.chunkNumber = chunkNumber;
-		
 		// Filename
 		int fileNameLength = din.readInt();
 		byte[] fileNameBytes = new byte[fileNameLength];
 		din.readFully(fileNameBytes);
 		
 		this.fileName = new String(fileNameBytes);
-		
-		// timestamp
-		long timestamp = din.readLong();
-		
-		this.timestamp = timestamp;
 		
 		baInputStream.close();
 		din.close();
@@ -90,27 +74,17 @@ public class ClientChunkServerRequestToController implements Event {
 		dout.writeInt(nodeInformationLength);
 		dout.write(nodeInformationBytes);
 		
-		// chunkNumber
-		dout.writeInt(chunkNumber);
-		
 		// Filename
 		byte[] fileNameBytes = this.fileName.getBytes();
 		int fileNameLength = fileNameBytes.length;
 		dout.writeInt(fileNameLength);
 		dout.write(fileNameBytes);
 		
-		// timestamp
-		dout.writeLong(this.timestamp);
-		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
 		dout.close();
 		return marshalledBytes;
-	}
-	
-	public int getChunkNumber() {
-		return this.chunkNumber;
 	}
 	
 	public NodeInformation getClienNodeInformation() {
@@ -120,10 +94,5 @@ public class ClientChunkServerRequestToController implements Event {
 	public String getFilename() {
 		return this.fileName;
 	}
-	
-	public long getTimestamp() {
-		return this.timestamp;
-	}
-
 
 }

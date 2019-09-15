@@ -16,6 +16,7 @@ import cs555.replication.transport.TCPSender;
 import cs555.replication.transport.TCPServerThread;
 import cs555.replication.util.NodeInformation;
 import cs555.replication.wireformats.ClientChunkServerRequestToController;
+import cs555.replication.wireformats.ClientReadFileRequestToController;
 import cs555.replication.wireformats.ClientRegisterRequestToController;
 import cs555.replication.wireformats.ClientSendChunkToChunkServer;
 import cs555.replication.wireformats.ControllerChunkServersResponseToClient;
@@ -125,12 +126,12 @@ public class Client implements Node {
 	}
 	
 	private static void handleUserInput(Client client) {
+		Scanner scan = new Scanner(System.in);
 		
-		if (client.accessUserInput) {
-			Scanner scan = new Scanner(System.in);
+		System.out.println("Ready for input.");
 			
-			System.out.println("Ready for input.");
-	        while(true) {
+        while(true) {
+        	if (client.accessUserInput) {
 	            System.out.println("Options:\n[S] Store a File\n[R] Read a File\n[Q] Quit\nPlease type your request: ");
 	            String input = scan.nextLine();
 	            
@@ -151,11 +152,14 @@ public class Client implements Node {
 						} else {
 							System.out.println("Command unrecognized. Please enter a valid input.");
 						}
-	            		
 	            		break;
 	            	case "R":
 	            		if (DEBUG) { System.out.println("User selected Read a file."); }
+	            		String filenameToRead;
+	            		System.out.println("Enter the name of the file that you wish to store: ");
+	            		filenameToRead = scan.nextLine();
 	            		client.accessUserInput = false;
+	            		client.sendClientReadFileRequestToController(filenameToRead);
 	            		break;
 	            	case "Q":
 	            		if (DEBUG) { System.out.println("User selected Quit."); }
@@ -164,8 +168,8 @@ public class Client implements Node {
 	            	default:
 	            		System.out.println("Command unrecognized. Please enter a valid input.");
 	            }
-	        }
-		}
+        	}
+        }
 	}
 	
 	private void connectToController() {
@@ -227,17 +231,21 @@ public class Client implements Node {
 		}
 		
 		if (DEBUG) { System.out.println("end Client sendClientChunkServerRequestToController"); }
-		// current idea on how to implement this:
-
-		// step 3: in the metadata of what is sent back and forth, need to include the chunk number that we're on and the total number of chunks
+	}
+	
+	private void sendClientReadFileRequestToController(String filename) {
+		if (DEBUG) { System.out.println("begin Client sendClientReadFileRequestToController"); }
 		
-		// step 4: controller sends chunk servers, listen in client for those to come in and it will say which chunk it is sending. Use that to get the correct byte data from the split file and send to one chunk server along with a list of other chunk servers
+		try {
+			ClientReadFileRequestToController readRequest = new ClientReadFileRequestToController(clientNodeInformation, filename);
+			this.clientSender.sendData(readRequest.getBytes());
+			
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+		}
 		
-		// step 5: if chunk number is not equal to the total number of chunks, send another request to the controller for the next chunk number to be written
+		if (DEBUG) { System.out.println("end Client sendClientReadFileRequestToController"); }
 		
-		// step 6: repeat process until chunk number == total number of chunks. In that case, file has been stored and can set the command line variable to true again to allow interfacing
-		
-		// so basically, everything below needs to be put into its own file to split the object then stored here. Do that next time and get working on all of this
 	}
 	
 	private void handleControllerChunkServersResponse(Event event) {
