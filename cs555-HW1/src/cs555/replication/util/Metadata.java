@@ -1,5 +1,12 @@
 package cs555.replication.util;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
@@ -29,6 +36,60 @@ public class Metadata {
 
 	public String getChecksum() {
 		return checksum;
+	}
+	
+	public Metadata(byte[] marshalledBytes) throws IOException {
+		ByteArrayInputStream baInputStream = new ByteArrayInputStream(marshalledBytes);
+		DataInputStream din = new DataInputStream(new BufferedInputStream(baInputStream));
+		
+		// versionInfoNumber, int
+		int versionInfoNumber = din.readInt();
+		this.versionInfoNumber = versionInfoNumber;
+		
+		// sequenceNumber, int
+		int sequenceNumber = din.readInt();
+		this.sequenceNumber = sequenceNumber;
+		
+		// timestamp, long
+		long timestamp = din.readLong();
+		this.timestamp = timestamp;
+		
+		// checksum, String
+		int checksumLength = din.readInt();
+		byte[] checksumBytes = new byte[checksumLength];
+		din.readFully(checksumBytes);
+		this.checksum = new String(checksumBytes);
+		
+		baInputStream.close();
+		din.close();
+	}
+	
+	public byte[] getBytes() throws IOException {
+		byte[] marshalledBytes = null;
+		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
+		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
+		
+		// versionInfoNumber, int
+		dout.writeInt(this.versionInfoNumber);
+		
+		// sequenceNumber, int
+		dout.writeInt(this.sequenceNumber);
+		
+		// timestamp, long
+		dout.writeLong(this.timestamp);
+		
+		// checksum, String
+		byte[] checksumBytes = this.checksum.getBytes();
+		int checksumLength = checksumBytes.length;
+		dout.writeInt(checksumLength);
+		dout.write(checksumBytes);
+		
+		dout.flush();
+		marshalledBytes = baOutputStream.toByteArray();
+		baOutputStream.close();
+		dout.close();
+		
+		return marshalledBytes;
 	}
 	
 	// code based on the following site:

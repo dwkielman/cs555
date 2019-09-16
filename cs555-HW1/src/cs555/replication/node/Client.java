@@ -3,6 +3,8 @@ package cs555.replication.node;
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
@@ -16,6 +18,7 @@ import cs555.replication.transport.TCPReceiverThread;
 import cs555.replication.transport.TCPSender;
 import cs555.replication.transport.TCPServerThread;
 import cs555.replication.util.NodeInformation;
+import cs555.replication.wireformats.ChunkServerSendChunkToClient;
 import cs555.replication.wireformats.ClientChunkServerRequestToController;
 import cs555.replication.wireformats.ClientReadFileRequestToController;
 import cs555.replication.wireformats.ClientRegisterRequestToController;
@@ -46,7 +49,7 @@ public class Client implements Node {
 	private boolean accessUserInput;
 	private ArrayList<byte[]> fileIntoChunks;
 	private static NodeInformation clientNodeInformation;
-	private HashMap<Integer, byte[]> receivedChunksMap;
+	private HashMap<String, HashMap<Integer, byte[]>> receivedChunksMap;
 	
 	private static final int SIZE_OF_CHUNK = 1024 * 64;
 	
@@ -60,7 +63,7 @@ public class Client implements Node {
 			this.thread.start();
 			this.accessUserInput = true;
 			this.fileIntoChunks = new ArrayList<byte[]>();
-			this.receivedChunksMap = new HashMap<Integer, byte[]>();
+			this.receivedChunksMap = new HashMap<String, HashMap<Integer, byte[]>>();
 			
 			if (DEBUG) { System.out.println("My server port number is: " + this.localHostPortNumber); }
 			
@@ -79,7 +82,7 @@ public class Client implements Node {
 		int eventType = event.getType();
 		if (DEBUG) { System.out.println("Event " + eventType + " Passed to Client."); }
 		switch(eventType) {
-			// REGISTER_RESPONSE = 6001
+			// CONTROLLER_REGISTER_RESPONSE_TO_CLIENT = 6001
 			case Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CLIENT:
 				handleControllerRegisterResponse(event);	
 				break;
@@ -89,6 +92,10 @@ public class Client implements Node {
 			// CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT = 6003
 			case Protocol.CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT:
 				handleControllerChunkServerToReadResponseToClient(event);
+				break;
+			// CHUNKSERVER_SEND_CHUNK_TO_CLIENT = 7002
+			case Protocol.CHUNKSERVER_SEND_CHUNK_TO_CLIENT:
+				ChunkServerSendChunkToClient(event);
 				break;
 			default:
 				System.out.println("Invalid Event to Node.");
@@ -229,7 +236,6 @@ public class Client implements Node {
 	
 	private void sendClientChunkServerRequestToController(String filename, int chunkNumber, long timestamp) {
 		if (DEBUG) { System.out.println("begin Client sendClientChunkServerRequestToController"); }
-		//NodeInformation client = new NodeInformation(this.localHostIPAddress, this.localHostPortNumber);
 		
 		try {
 			ClientChunkServerRequestToController chunkServersRequest = new ClientChunkServerRequestToController(clientNodeInformation, chunkNumber, filename, timestamp);
@@ -316,6 +322,7 @@ public class Client implements Node {
 			Socket chunkServer = new Socket(chunkServerNodeInformation.getNodeIPAddress(), chunkServerNodeInformation.getNodePortNumber());
 			
 			ClientRequestToReadFromChunkServer requestToReadFromChunkServer = new ClientRequestToReadFromChunkServer(clientNodeInformation, chunkNumber, filename, totalNumberOfChunks);
+			
 			TCPSender chunkSender = new TCPSender(chunkServer);
 			chunkSender.sendData(requestToReadFromChunkServer.getBytes());
 			
@@ -324,6 +331,34 @@ public class Client implements Node {
 		}
 		// receivedChunksMap
 		if (DEBUG) { System.out.println("end Client handleControllerChunkServerToReadResponseToClient"); }
+	}
+	
+	private void ChunkServerSendChunkToClient(Event event) {
+		if (DEBUG) { System.out.println("begin Client ChunkServerSendChunkToClient"); }
+		
+		ChunkServerSendChunkToClient chunksReceived = (ChunkServerSendChunkToClient) event;
+		
+		int chunkNumber = chunksReceived.getChunkNumber();
+		byte[] chunkData = chunksReceived.getChunkBytes();
+		String filename = chunksReceived.getFilename();
+		int totalNumberOfChunks = chunksReceived.getTotalNumberOfChunks();
+
+		HashMap chunkWithBytes = new HashMap<Integer, byte[]>();
+		chunkWithBytes.put(chunkNumber, chunkData);
+		
+		synchronized (this.receivedChunksMap) {
+			this.receivedChunksMap.put(filename, chunkWithBytes);
+			if (this.receivedChunksMap.get(filename).size() == totalNumberOfChunks) {
+				// file is complete, put together and build
+				mergeFile(filename);
+			} else {
+				// file is not complete, need to request the next chunk
+				chunkNumber++;
+				sendClientReadFileRequestToController(filename, chunkNumber);
+				
+			}
+		}
+		if (DEBUG) { System.out.println("end Client ChunkServerSendChunkToClient"); }
 	}
 	
 	private static ArrayList<byte[]> splitFileIntoBytes(File file, int chunkNumber) {
@@ -349,6 +384,44 @@ public class Client implements Node {
 		}
 		
 		return filesAsBytesList;
+	}
+	
+	private void mergeFile(String filename) {
+		String path = "/tmp/received";
+		
+		File pathFile = new File(path);
+		if (!pathFile.exists()) {
+			pathFile.mkdir();
+		}
+		
+		String receivedFilePath = path + filename;
+		
+		File receivedFile = new File(receivedFilePath);
+		try {
+			if (!receivedFile.exists()) {
+					receivedFile.createNewFile();
+			} 
+			
+			FileOutputStream fos = new FileOutputStream(receivedFile);
+			
+			int totalNumberOfChunks = this.receivedChunksMap.get(filename).size();
+			
+			HashMap<Integer, byte[]> dataToWrite = this.receivedChunksMap.get(filename);
+			
+			for (int i=0; i < totalNumberOfChunks; i++) {
+				byte[] data = dataToWrite.get(i);
+				fos.write(data);
+			}
+			
+			// remove the file from the map, no longer building it
+			this.receivedChunksMap.remove(filename);
+			accessUserInput = true;
+			
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		
 	}
 		
 }

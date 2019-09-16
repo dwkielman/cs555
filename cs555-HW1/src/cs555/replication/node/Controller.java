@@ -11,11 +11,16 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import cs555.replication.transport.TCPControllerHeartbeat;
+import cs555.replication.transport.TCPHeartbeat;
 import cs555.replication.transport.TCPSender;
 import cs555.replication.transport.TCPServerThread;
 import cs555.replication.util.HeartbeatMetadata;
+import cs555.replication.util.Metadata;
 import cs555.replication.util.NodeInformation;
 import cs555.replication.wireformats.ChunkServerRegisterRequestToController;
+import cs555.replication.wireformats.ChunkServerSendMajorHeartbeatToController;
+import cs555.replication.wireformats.ChunkServerSendMinorHeartbeatToController;
 import cs555.replication.wireformats.ClientChunkServerRequestToController;
 import cs555.replication.wireformats.ClientReadFileRequestToController;
 import cs555.replication.wireformats.ClientRegisterRequestToController;
@@ -40,14 +45,17 @@ public class Controller implements Node {
 	private Thread thread;
 	private HashMap<NodeInformation, TCPSender> chunkServerNodesMap;
 	private HashMap<NodeInformation, TCPSender> clientNodesMap;
-	private ArrayList<HeartbeatMetadata> chunkServerHeartbeatMetadaList;
+	private HashMap<NodeInformation, HeartbeatMetadata> chunkServerHeartbeatMetadaList;
+	private ArrayList<NodeInformation> deadChunkServers;
 	private HashMap<String, HashMap<Integer, ArrayList<HeartbeatMetadata>>> filesOnChunkServersMap;
 	private static final int REPLICATION_LEVEL = 3;
+	public static Controller controller;
 	
 	private Controller(int portNumber) {
 		this.portNumber = portNumber;
 		this.chunkServerNodesMap = new HashMap<NodeInformation, TCPSender>();
-		this.chunkServerHeartbeatMetadaList = new ArrayList<HeartbeatMetadata>();
+		this.chunkServerHeartbeatMetadaList = new  HashMap<NodeInformation, HeartbeatMetadata>();
+		this.deadChunkServers = new ArrayList<NodeInformation>();
 		this.filesOnChunkServersMap = new HashMap<String, HashMap<Integer, ArrayList<HeartbeatMetadata>>>();
 		
 		try {
@@ -56,8 +64,32 @@ public class Controller implements Node {
 			this.thread = new Thread(this.tCPServerThread);
 			this.thread.start();
 			System.out.println("Controller TCPServerThread running.");
+			
+			TCPControllerHeartbeat tCPControllerHeartbeat = new TCPControllerHeartbeat(controller);
+			Thread tCPControllerHeartBeatThread = new Thread(tCPControllerHeartbeat);
+			tCPControllerHeartBeatThread.start();
 		} catch (Exception e) {
 			e.printStackTrace();
+		}
+	}
+	
+	public Controller() {}
+	
+	public void addDeadChunkServer(NodeInformation deadChunkServer) {
+		synchronized (this.deadChunkServers) {
+			this.deadChunkServers.add(deadChunkServer);
+		}
+	}
+	
+	public TCPSender getChunkServerSender(NodeInformation chunkServer) {
+		synchronized (this.chunkServerNodesMap) {
+			return this.chunkServerNodesMap.get(chunkServer);
+		}
+	}
+	
+	public Set<NodeInformation> getLiveChunkServers() {
+		synchronized (this.chunkServerHeartbeatMetadaList) {
+			return this.chunkServerHeartbeatMetadaList.keySet();
 		}
 	}
 	
@@ -78,7 +110,7 @@ public class Controller implements Node {
 			nfe.printStackTrace();
 		}
 		
-		Controller controller = new Controller(controllerPortNumber);
+		controller = new Controller(controllerPortNumber);
 		
 		String controllerIP = "";
 		
@@ -89,7 +121,6 @@ public class Controller implements Node {
         }
 
         System.out.println("Controller is running at IP Address: " + controllerIP + " on Port Number: " + controller.portNumber);
-        //handleUserInput(controller);
 	}
 	
 	@Override
@@ -100,6 +131,14 @@ public class Controller implements Node {
 			// CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER = 7000
 			case Protocol.CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER:
 				handleChunkServerRegisterRequest(event);
+				break;
+			// CHUNKSERVER_SEND_MAJOR_HEARTBEAT_T0_CONTROLLER = 7003
+			case Protocol.CHUNKSERVER_SEND_MAJOR_HEARTBEAT_T0_CONTROLLER:
+				handleChunkServerSendMajorHeartbeatToController(event);
+				break;
+			// CHUNKSERVER_SEND_MINOR_HEARTBEAT_T0_CONTROLLER = 7004
+			case Protocol.CHUNKSERVER_SEND_MINOR_HEARTBEAT_T0_CONTROLLER:
+				handleChunkServerSendMinorHeartbeatToController(event);
 				break;
 			// CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8000
 			case Protocol.CLIENT_REGISTER_REQUEST_TO_CONTROLLER:
@@ -150,7 +189,8 @@ public class Controller implements Node {
 			// success, node is not currently registered so adding to the map of nodes
 			if (!this.chunkServerNodesMap.containsKey(ni)) {
 				this.chunkServerNodesMap.put(ni, sender);
-				this.chunkServerHeartbeatMetadaList.add(hbm);
+				this.chunkServerHeartbeatMetadaList.put(ni, hbm);
+				//this.chunkServerHeartbeatMetadaList.add(hbm);
 				System.out.println("Chunk Server Registration request successful. The number of Chunk Servers currently running on the Controller is (" + this.chunkServerNodesMap.size() + ")");
 				status = (byte) 1;
 				message = "Chunk Server Registered";
@@ -223,8 +263,11 @@ public class Controller implements Node {
 			if (chunkServerHeartbeatMetadaList.size() >= REPLICATION_LEVEL) {
 				try {
 					// sort the chunk servers by those with the most space, this should do it in descending order
-					chunkServerHeartbeatMetadaList.sort((h1, h2) -> Long.compare(h2.getFreeSpaceAvailable(), h1.getFreeSpaceAvailable()));
-					ArrayList<HeartbeatMetadata> hbArrayList = chunkServerHeartbeatMetadaList.stream().limit(REPLICATION_LEVEL).collect(Collectors.toCollection(ArrayList::new));
+					ArrayList<HeartbeatMetadata> tempHbmList = new ArrayList<HeartbeatMetadata>();
+					for (HeartbeatMetadata hbm : this.chunkServerHeartbeatMetadaList.values()) {
+						tempHbmList.add(hbm);
+					}
+					ArrayList<HeartbeatMetadata> hbArrayList = tempHbmList.stream().limit(REPLICATION_LEVEL).collect(Collectors.toCollection(ArrayList::new));
 					
 					// update the chunkServers Hashmap
 					HashMap<Integer, ArrayList<HeartbeatMetadata>> tempMap = new HashMap<Integer, ArrayList<HeartbeatMetadata>>(chunkNumber);
@@ -288,4 +331,70 @@ public class Controller implements Node {
 		if (DEBUG) { System.out.println("end Controller handleClientReadRequest"); }
 	}
 	
+	private void handleChunkServerSendMajorHeartbeatToController(Event event) {
+		if (DEBUG) { System.out.println("begin Controller handleChunkServerSendMajorHeartbeatToController"); }
+		
+		ChunkServerSendMajorHeartbeatToController majorHeartbeat = (ChunkServerSendMajorHeartbeatToController) event;
+		
+		NodeInformation chunkServer = majorHeartbeat.getChunkServer();
+		int totalNumberOfChunks = majorHeartbeat.getTotalNumberOfChunks();
+		long freespaceAvailable = majorHeartbeat.getFreespaceAvailable();
+		ArrayList<Metadata> metadataList = majorHeartbeat.getMetadataList();
+		
+		HeartbeatMetadata hbm = new HeartbeatMetadata(chunkServer, totalNumberOfChunks, freespaceAvailable);
+		hbm.setMetadata(metadataList);
+		
+		synchronized (chunkServerHeartbeatMetadaList) {
+			chunkServerHeartbeatMetadaList.put(chunkServer, hbm);
+		}
+		
+		if (DEBUG) { System.out.println("end Controller handleChunkServerSendMajorHeartbeatToController"); }
+	}
+	
+	private void handleChunkServerSendMinorHeartbeatToController(Event event) {
+		if (DEBUG) { System.out.println("begin Controller handleChunkServerSendMinorHeartbeatToController"); }
+		
+		ChunkServerSendMinorHeartbeatToController minorHeartbeat = (ChunkServerSendMinorHeartbeatToController) event;
+		
+		NodeInformation chunkServer = minorHeartbeat.getChunkServer();
+		int totalNumberOfChunks = minorHeartbeat.getTotalNumberOfChunks();
+		long freespaceAvailable = minorHeartbeat.getFreespaceAvailable();
+		ArrayList<Metadata> metadataList = minorHeartbeat.getMetadataList();
+		
+		HeartbeatMetadata hbm = new HeartbeatMetadata(chunkServer, totalNumberOfChunks, freespaceAvailable);
+
+		synchronized (chunkServerHeartbeatMetadaList) {
+			HeartbeatMetadata storedHBM = chunkServerHeartbeatMetadaList.get(chunkServer);
+			ArrayList<Metadata> storedHBMMetadataList = storedHBM.getMetadataList();
+			
+			for (Metadata md : storedHBMMetadataList) {
+				metadataList.add(md);
+			}
+			
+			hbm.setMetadata(metadataList);
+			chunkServerHeartbeatMetadaList.put(chunkServer, hbm);
+		}
+		
+		if (DEBUG) { System.out.println("end Controller handleChunkServerSendMinorHeartbeatToController"); }
+	}
+	
+	public void updateDeadChunkServers() {
+		synchronized (this.chunkServerHeartbeatMetadaList) {
+			if (!deadChunkServers.isEmpty()) {
+				for (NodeInformation deadChunkServer : deadChunkServers) {
+					//NodeInformation chunkServerToUpdate = this.chunkServerHeartbeatMetadaList.get(deadChunkServer);
+					
+					// well Daniel, now you're stuck here. What you need to do is find all metadata associated with the dead chunk server and replicate it on another server
+					
+					// consider refactoring the way that you store metadata with each file here. It's actually a little incorrect because it's the whole metadata. Maybe instead store the NodeInformation as the value in the map associated with a given file name?
+					
+					// otherwise, consider building a new structure for holding file names and node informations that hold specific chunks. But what the fix is that is descirbed above should do the same thing, unless that object is being used somewhere, which I don't think it is. At least not correctly.
+					
+					// good luck you. Then you need to do healing on bad files. Then you can test.
+					
+					this.chunkServerHeartbeatMetadaList.remove(deadChunkServer);
+				}
+			}
+		}
+	}
 }

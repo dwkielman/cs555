@@ -4,19 +4,23 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 
+import cs555.replication.transport.TCPHeartbeat;
 import cs555.replication.transport.TCPReceiverThread;
 import cs555.replication.transport.TCPSender;
 import cs555.replication.transport.TCPServerThread;
 import cs555.replication.util.Metadata;
 import cs555.replication.util.NodeInformation;
 import cs555.replication.wireformats.ChunkServerRegisterRequestToController;
+import cs555.replication.wireformats.ChunkServerSendChunkToClient;
 import cs555.replication.wireformats.ChunkServerSendChunkToLastChunkServer;
+import cs555.replication.wireformats.ClientRequestToReadFromChunkServer;
 import cs555.replication.wireformats.ClientSendChunkToChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToChunkServer;
 import cs555.replication.wireformats.Event;
@@ -36,22 +40,61 @@ public class ChunkServer implements Node {
 	private int localHostPortNumber;
 	// may not need this, instead may need something for storing the location of where data is and a file name. doesn't matter which client requests the data,
 	// just need to send the correct file. will include the client node in the message to the chunk server
-	private HashMap<NodeInformation, TCPSender> clientNodesMap;
 	private HashMap<String, ArrayList<Integer>> filesWithChunkNumberMap;
 	private HashMap<String, Metadata> filesWithMetadataMap;
-	private final String FILE_LOCATION = "/tmp/data";
+	private ArrayList<Metadata> newMetadataList;
+	private static final String FILE_LOCATION = "/tmp/data";
 	private TCPReceiverThread chunkServerTCPReceiverThread;
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
 	private TCPSender chunkServerSender;
+	private static ChunkServer chunkServer;
+	private static NodeInformation chunkServerNodeInformation;
 	
 	private static final int SIZE_OF_SLICE = 1024 * 8;
 
+	public ChunkServer() {}
+	
+	public ArrayList<Metadata> getFilesWithMetadataMap() {
+		ArrayList<Metadata> metadataList = new ArrayList<Metadata>();
+		for (Metadata m : this.filesWithMetadataMap.values()) {
+			metadataList.add(m);
+		}
+		
+		return metadataList;
+	}
+	
+	public ArrayList<Metadata> getNewFilesWithMetadataMap() {
+		return this.newMetadataList;
+	}
+	
+	public void clearNewMetadataList() {
+		synchronized (this.newMetadataList){
+			this.newMetadataList.clear();
+		}
+	}
+	
+	public long getFreeSpaceAvailable() {
+		return new File(FILE_LOCATION).getFreeSpace();
+	}
+	
+	public int getNumberOfChunksStored() {
+		int totalNumberOfChunks = 0;
+		for (ArrayList<Integer> chunkList : filesWithChunkNumberMap.values()) {
+			totalNumberOfChunks += chunkList.size();
+		}
+		return totalNumberOfChunks;
+	}
+	
+	public TCPSender getChunkServerSender() {
+		return this.chunkServerSender;
+	}
+	
 	private ChunkServer(String controllerIPAddress, int controllerPortNumber) {
 		this.controllerNodeInformation = new NodeInformation(controllerIPAddress, controllerPortNumber);
-		this.clientNodesMap = new HashMap<NodeInformation, TCPSender>();
 		this.filesWithChunkNumberMap = new HashMap<String, ArrayList<Integer>>();
 		this.filesWithMetadataMap = new HashMap<String, Metadata>();
+		this.newMetadataList = new ArrayList<Metadata>();
 		
 		try {
 			TCPServerThread serverThread = new TCPServerThread(0, this);
@@ -130,8 +173,8 @@ public class ChunkServer implements Node {
 			System.out.println("Invalid argument. Second argument must be a number.");
 			nfe.printStackTrace();
 		}
-		
-		ChunkServer chunkServer = new ChunkServer(controllerIPAddress, controllerPortNumber);
+		chunkServer = new ChunkServer(controllerIPAddress, controllerPortNumber);
+		chunkServerNodeInformation = new NodeInformation(chunkServer.localHostIPAddress, chunkServer.localHostPortNumber);
 	}
 	
 	private void connectToController() {
@@ -174,6 +217,11 @@ public class ChunkServer implements Node {
 		if (chunkServerRegisterResponse.getStatusCode() == (byte) 1) {
 			System.out.println("Registration Request Succeeded.");
 			System.out.println(String.format("Message: %s", chunkServerRegisterResponse.getAdditionalInfo()));
+			
+			TCPHeartbeat tCPHeartbeat = new TCPHeartbeat(chunkServer, chunkServerNodeInformation);
+			Thread tCPHeartBeatThread = new Thread(tCPHeartbeat);
+			tCPHeartBeatThread.start();
+			
 		// unsuccessful registration
 		} else {
 			System.out.println("Registration Request Failed. Exiting.");
@@ -308,9 +356,55 @@ public class ChunkServer implements Node {
 	
 	private void handleClientRequestToReadFromChunkServer(Event event) {
 		if (DEBUG) { System.out.println("begin ChunkServer handleClientRequestToReadFromChunkServer"); }
+		ClientRequestToReadFromChunkServer clientRequest = (ClientRequestToReadFromChunkServer) event;
 		
-		// stopping here for now, need to get the info from request sent from the client, find the data, validate that it is correct, then send it TO the client
+		String filename = clientRequest.getFilename();
+		int chunknumber = clientRequest.getChunkNumber();
+		int totalNumberOfChunks = clientRequest.getTotalNumberOfChunks();
 		
+		String filelocation = FILE_LOCATION + filename + "_chunk" + chunknumber;
+		
+		File fileToReturn = new File(filelocation);
+		
+		if (fileToReturn.exists()) {
+			try {
+				RandomAccessFile raf = new RandomAccessFile(fileToReturn, "rw");
+				byte[] tempData = new byte[(int) fileToReturn.length()];
+				raf.read(tempData);
+				
+				Metadata tempMetadata = new Metadata(1);
+				
+				Metadata storedMetadata = filesWithMetadataMap.get(filelocation);
+				String storedChecksum = storedMetadata.getChecksum();
+				
+				tempMetadata.generataSHA1Checksum(tempData, SIZE_OF_SLICE);
+				
+				if (tempMetadata.getChecksum().equals(storedChecksum)) {
+					// success, requested data is same as the one stored on this system
+					NodeInformation client = clientRequest.getClientNodeInformation();
+					
+					Socket clientServer = new Socket(client.getNodeIPAddress(), client.getNodePortNumber());
+					
+					TCPSender clientSender = new TCPSender(clientServer);
+					
+					ChunkServerSendChunkToClient chunkToSend = new ChunkServerSendChunkToClient(tempData, chunknumber, filename, totalNumberOfChunks);
+					
+					clientSender.sendData(chunkToSend.getBytes());
+					
+				} else {
+					// data has been messed with in some way
+					System.out.println("Data has been corrupted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
+					
+				}
+				
+				
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+
 		// if the data is invalid then need to send some error message/status that the data is wrong to both the client and to the controller
 		
 		// controller should remove this node from the valid nodes for this chunk of the data and send another chunkserver to the client to get the correct data
@@ -346,6 +440,7 @@ public class ChunkServer implements Node {
 			
 			String metadataFileLocation = path + ".metadata";
 			this.filesWithMetadataMap.put(path, metadata);
+			this.newMetadataList.add(metadata);
 			
 			File metadataFile = new File(metadataFileLocation);
 			

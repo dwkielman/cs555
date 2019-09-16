@@ -50,6 +50,10 @@ public class EventFactory {
 				case Protocol.CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT:
 					event = new ControllerChunkServerToReadResponseToClient(marshalledBytes);
 					break;
+				// CONTROLLER_HEARTBEAT_TO_CHUNKSERVER = 6004
+				case Protocol.CONTROLLER_HEARTBEAT_TO_CHUNKSERVER:
+					event = new ControllerHeartbeatToChunkServer(marshalledBytes);
+					break;
 				// CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER = 7000
 				case Protocol.CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER:
 					event = new ChunkServerRegisterRequestToController(marshalledBytes);
@@ -57,6 +61,19 @@ public class EventFactory {
 				// CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER = 7001
 				case Protocol.CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER:
 					event = new ChunkServerSendChunkToLastChunkServer(marshalledBytes);
+					break;
+				// CHUNKSERVER_SEND_CHUNK_TO_CLIENT = 7002
+				case Protocol.CHUNKSERVER_SEND_CHUNK_TO_CLIENT:
+					event = new ChunkServerSendChunkToClient(marshalledBytes);
+					break;
+				// CHUNKSERVER_SEND_MAJOR_HEARTBEAT_T0_CONTROLLER = 7003
+				case Protocol.CHUNKSERVER_SEND_MAJOR_HEARTBEAT_T0_CONTROLLER:
+					event = new ChunkServerSendMajorHeartbeatToController(marshalledBytes);
+					break;
+				// CHUNKSERVER_SEND_MINOR_HEARTBEAT_T0_CONTROLLER = 7004
+				case Protocol.CHUNKSERVER_SEND_MINOR_HEARTBEAT_T0_CONTROLLER:
+					event = new ChunkServerSendMinorHeartbeatToController(marshalledBytes);
+					break;
 				// CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8000
 				case Protocol.CLIENT_REGISTER_REQUEST_TO_CONTROLLER:
 					event = new ClientRegisterRequestToController(marshalledBytes);
