@@ -22,6 +22,7 @@ import cs555.replication.wireformats.ChunkServerSendChunkToClient;
 import cs555.replication.wireformats.ChunkServerSendChunkToLastChunkServer;
 import cs555.replication.wireformats.ClientRequestToReadFromChunkServer;
 import cs555.replication.wireformats.ClientSendChunkToChunkServer;
+import cs555.replication.wireformats.ControllerForwardDataToNewChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToChunkServer;
 import cs555.replication.wireformats.Event;
 import cs555.replication.wireformats.Protocol;
@@ -122,6 +123,10 @@ public class ChunkServer implements Node {
 			// CONTROLLER_REGISTER_RESPONSE_TO_CHUNKSERVER = 6000
 			case Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CHUNKSERVER:
 				handleChunkServerRegisterResponse(event);	
+				break;
+			// CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER = 6005
+			case Protocol.CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER:
+				handleControllerForwardDataToNewChunkServer(event);
 				break;
 			// CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER = 7001
 			case Protocol.CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER:
@@ -394,10 +399,8 @@ public class ChunkServer implements Node {
 				} else {
 					// data has been messed with in some way
 					System.out.println("Data has been corrupted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
-					
+					sendCorruptDataReportToConroller();
 				}
-				
-				
 			} catch (FileNotFoundException e) {
 				e.printStackTrace();
 			} catch (IOException e) {
@@ -414,6 +417,59 @@ public class ChunkServer implements Node {
 		
 		
 		if (DEBUG) { System.out.println("end ChunkServer handleClientRequestToReadFromChunkServer"); }
+	}
+	private void handleControllerForwardDataToNewChunkServer(Event event) {
+		if (DEBUG) { System.out.println("begin ChunkServer handleControllerForwardDataToNewChunkServer"); }
+		
+		ControllerForwardDataToNewChunkServer forwardData = (ControllerForwardDataToNewChunkServer) event;
+		
+		int chunknumber = forwardData.getChunkNumber();
+		String filename = forwardData.getFilename();
+		
+		String filelocation = FILE_LOCATION + filename + "_chunk" + chunknumber;
+		
+		File fileToReturn = new File(filelocation);
+		
+		if (fileToReturn.exists()) {
+			try {
+				RandomAccessFile raf = new RandomAccessFile(fileToReturn, "rw");
+				byte[] tempData = new byte[(int) fileToReturn.length()];
+				raf.read(tempData);
+				
+				Metadata tempMetadata = new Metadata(1);
+				
+				Metadata storedMetadata = filesWithMetadataMap.get(filelocation);
+				String storedChecksum = storedMetadata.getChecksum();
+				
+				tempMetadata.generataSHA1Checksum(tempData, SIZE_OF_SLICE);
+				
+				if (tempMetadata.getChecksum().equals(storedChecksum)) {
+					// success, requested data is same as the one stored on this system
+					NodeInformation newChunkServer = forwardData.getChunkServer();
+					
+					Socket chunkServerSocket = new Socket(newChunkServer.getNodeIPAddress(), newChunkServer.getNodePortNumber());
+					
+					TCPSender chunkServerSender = new TCPSender(chunkServerSocket);
+					
+					long timestamp = fileToReturn.lastModified();
+					
+					ChunkServerSendChunkToLastChunkServer chunksToLastChunkServer = new ChunkServerSendChunkToLastChunkServer(tempData, chunknumber, filename, timestamp);
+					
+					TCPSender chunkSender = new TCPSender(chunkServerSocket);
+					chunkSender.sendData(chunksToLastChunkServer.getBytes());
+					
+				} else {
+					// data has been messed with in some way
+					System.out.println("Data has been corrupted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
+					sendCorruptDataReportToConroller();
+				}
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		if (DEBUG) { System.out.println("end ChunkServer handleControllerForwardDataToNewChunkServer"); }
 	}
 	
 	private void saveFile(String fileName, byte[] chunkData, int chunkNumber, int versionNumber) {
@@ -456,5 +512,9 @@ public class ChunkServer implements Node {
 			System.out.println("ChunkServer: Error in saveFile: Writing file failed.");
 			e.printStackTrace();
 		}
+	}
+	
+	private void sendCorruptDataReportToConroller() {
+		
 	}
 }

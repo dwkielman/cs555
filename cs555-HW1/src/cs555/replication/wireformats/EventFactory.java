@@ -54,6 +54,10 @@ public class EventFactory {
 				case Protocol.CONTROLLER_HEARTBEAT_TO_CHUNKSERVER:
 					event = new ControllerHeartbeatToChunkServer(marshalledBytes);
 					break;
+				// CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER = 6005
+				case Protocol.CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER:
+					event = new ClientChunkServerRequestToController(marshalledBytes);
+					break;
 				// CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER = 7000
 				case Protocol.CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER:
 					event = new ChunkServerRegisterRequestToController(marshalledBytes);
