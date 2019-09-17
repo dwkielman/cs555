@@ -10,38 +10,35 @@ import java.io.IOException;
 
 import cs555.replication.util.NodeInformation;
 
-public class ClientChunkServerRequestToController implements Event {
+public class ControllerForwardDataToNewChunkServer implements Event {
 
-	private final int type = Protocol.CLIENT_CHUNKSERVER_REQUEST_TO_CONTROLLER;
-	private NodeInformation clientNodeInformation;
+	private final int type = Protocol.CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER;
+	private NodeInformation chunkServer;
 	private int chunkNumber;
-	private String fileName;
-	private long timestamp;
+	private String filename;
 	
-	public ClientChunkServerRequestToController(NodeInformation nodeInformation, int chunkNumber, String fileName, long timestamp) {
-		this.clientNodeInformation = nodeInformation;
+	public ControllerForwardDataToNewChunkServer(NodeInformation chunkServer, int chunkNumber, String filename) {
+		this.chunkServer = chunkServer;
 		this.chunkNumber = chunkNumber;
-		this.fileName = fileName;
-		this.timestamp = timestamp;
+		this.filename = filename;
 	}
 	
 	/**
 	 * byte[] construction is as follows:
 	 * type
-	 * NodeInformation
+	 * chunkServer
 	 * chunkNumber
-	 * fileName
-	 * timestamp
+	 * filename
 	 * @throws IOException 
 	 */
-	public ClientChunkServerRequestToController(byte[] marshalledBytes) throws IOException {
+	public ControllerForwardDataToNewChunkServer(byte[] marshalledBytes) throws IOException {
 		ByteArrayInputStream baInputStream = new ByteArrayInputStream(marshalledBytes);
 		DataInputStream din = new DataInputStream(new BufferedInputStream(baInputStream));
 		
 		int type = din.readInt();
 		
-		if (type != Protocol.CLIENT_CHUNKSERVER_REQUEST_TO_CONTROLLER) {
-			System.out.println("Invalid Message Type for ClientChunkServerRequestToController");
+		if (type != Protocol.CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER) {
+			System.out.println("Invalid Message Type for ControllerForwardDataToNewChunkServer");
 			return;
 		}
 		
@@ -49,24 +46,18 @@ public class ClientChunkServerRequestToController implements Event {
 		int nodeInformationLength = din.readInt();
 		byte[] nodeInformationBytes = new byte[nodeInformationLength];
 		din.readFully(nodeInformationBytes);
-		this.clientNodeInformation = new NodeInformation(nodeInformationBytes);
+		this.chunkServer = new NodeInformation(nodeInformationBytes);
 		
 		// chunkNumber
-		// numberOfPeerMessagingNodes
 		int chunkNumber = din.readInt();
 		this.chunkNumber = chunkNumber;
+
+		int filenameLength = din.readInt();
+		byte[] filenameBytes = new byte[filenameLength];
+		din.readFully(filenameBytes);
 		
-		// Filename
-		int fileNameLength = din.readInt();
-		byte[] fileNameBytes = new byte[fileNameLength];
-		din.readFully(fileNameBytes);
-		
-		this.fileName = new String(fileNameBytes);
-		
-		// timestamp
-		long timestamp = din.readLong();
-		
-		this.timestamp = timestamp;
+		// filename
+		this.filename = new String(filenameBytes);
 		
 		baInputStream.close();
 		din.close();
@@ -85,45 +76,38 @@ public class ClientChunkServerRequestToController implements Event {
 		dout.writeInt(this.type);
 		
 		// NodeInformation
-		byte[] nodeInformationBytes = this.clientNodeInformation.getBytes();
+		byte[] nodeInformationBytes = this.chunkServer.getBytes();
 		int nodeInformationLength = nodeInformationBytes.length;
 		dout.writeInt(nodeInformationLength);
 		dout.write(nodeInformationBytes);
 		
 		// chunkNumber
-		dout.writeInt(chunkNumber);
-		
-		// Filename
-		byte[] fileNameBytes = this.fileName.getBytes();
-		int fileNameLength = fileNameBytes.length;
-		dout.writeInt(fileNameLength);
-		dout.write(fileNameBytes);
-		
-		// timestamp
-		dout.writeLong(this.timestamp);
+		dout.writeInt(this.chunkNumber);
+
+		// filename
+		byte[] filenameBytes = this.filename.getBytes();
+		int filenameLength = filenameBytes.length;
+		dout.writeInt(filenameLength);
+		dout.write(filenameBytes);
 		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
 		dout.close();
+		
 		return marshalledBytes;
+	}
+
+	public NodeInformation getChunkServer() {
+		return this.chunkServer;
 	}
 	
 	public int getChunkNumber() {
 		return this.chunkNumber;
 	}
 	
-	public NodeInformation getClientNodeInformation() {
-		return this.clientNodeInformation;
-	}
-
 	public String getFilename() {
-		return this.fileName;
+		return this.filename;
 	}
-	
-	public long getTimestamp() {
-		return this.timestamp;
-	}
-
 
 }

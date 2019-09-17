@@ -26,6 +26,7 @@ import cs555.replication.wireformats.ClientReadFileRequestToController;
 import cs555.replication.wireformats.ClientRegisterRequestToController;
 import cs555.replication.wireformats.ControllerChunkServerToReadResponseToClient;
 import cs555.replication.wireformats.ControllerChunkServersResponseToClient;
+import cs555.replication.wireformats.ControllerForwardDataToNewChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToClient;
 import cs555.replication.wireformats.Event;
@@ -48,6 +49,8 @@ public class Controller implements Node {
 	private HashMap<NodeInformation, HeartbeatMetadata> chunkServerHeartbeatMetadaList;
 	private ArrayList<NodeInformation> deadChunkServers;
 	private HashMap<String, HashMap<Integer, ArrayList<HeartbeatMetadata>>> filesOnChunkServersMap;
+	private HashMap<NodeInformation, HashMap<String, ArrayList<Integer>>> chunkServersWithFilesChunksMap;
+	private HashMap<String, HashMap<Integer, ArrayList<NodeInformation>>> filesWithChunksNodeInformationMap;
 	private static final int REPLICATION_LEVEL = 3;
 	public static Controller controller;
 	
@@ -57,6 +60,8 @@ public class Controller implements Node {
 		this.chunkServerHeartbeatMetadaList = new  HashMap<NodeInformation, HeartbeatMetadata>();
 		this.deadChunkServers = new ArrayList<NodeInformation>();
 		this.filesOnChunkServersMap = new HashMap<String, HashMap<Integer, ArrayList<HeartbeatMetadata>>>();
+		this.chunkServersWithFilesChunksMap = new HashMap<NodeInformation, HashMap<String, ArrayList<Integer>>>();
+		this.filesWithChunksNodeInformationMap = new HashMap<String, HashMap<Integer, ArrayList<NodeInformation>>>();
 		
 		try {
 			TCPServerThread controllerServerThread = new TCPServerThread(this.portNumber, this);
@@ -248,17 +253,14 @@ public class Controller implements Node {
 	private void handleClientChunkServerRequest(Event event) {
 		if (DEBUG) { System.out.println("begin Controller handleClientChunkServerRequest"); }
 		ClientChunkServerRequestToController clientChunkServerRequest = (ClientChunkServerRequestToController) event;
-		NodeInformation clientNode = clientChunkServerRequest.getClienNodeInformation();
+		NodeInformation clientNode = clientChunkServerRequest.getClientNodeInformation();
 		int chunkNumber = clientChunkServerRequest.getChunkNumber();
 		String filename = clientChunkServerRequest.getFilename();
 		long timestamp = clientChunkServerRequest.getTimestamp();
 		
 		if (DEBUG) { System.out.println("Controller received a message type: " + clientChunkServerRequest.getType()); }
-		
-		//Set<String> files = filesOnChunkServersMap.keySet();
-		
-		// file not already stored in the hashmap
-		if (!filesOnChunkServersMap.get(filename).containsKey(chunkNumber)) {
+
+		//if (filesWithChunksNodeInformationMap.containsKey(filename)) {	
 			//HashMap<Integer, ArrayList<HeartbeatMetadata>> chunkServers = this.filesOnChunkServersMap.get(filename);
 			if (chunkServerHeartbeatMetadaList.size() >= REPLICATION_LEVEL) {
 				try {
@@ -267,12 +269,10 @@ public class Controller implements Node {
 					for (HeartbeatMetadata hbm : this.chunkServerHeartbeatMetadaList.values()) {
 						tempHbmList.add(hbm);
 					}
+					tempHbmList.sort((h1, h2) -> Long.compare(h2.getFreeSpaceAvailable(), h1.getFreeSpaceAvailable()));
+
+					// get the 3 chunk servers with the most space
 					ArrayList<HeartbeatMetadata> hbArrayList = tempHbmList.stream().limit(REPLICATION_LEVEL).collect(Collectors.toCollection(ArrayList::new));
-					
-					// update the chunkServers Hashmap
-					HashMap<Integer, ArrayList<HeartbeatMetadata>> tempMap = new HashMap<Integer, ArrayList<HeartbeatMetadata>>(chunkNumber);
-					tempMap.put(chunkNumber, hbArrayList);
-					filesOnChunkServersMap.put(filename, tempMap);
 					
 					// prep chunkServers to send to Client
 					ArrayList<NodeInformation> chunkServers = new ArrayList<NodeInformation>();
@@ -280,6 +280,35 @@ public class Controller implements Node {
 					for (HeartbeatMetadata hbm : hbArrayList) {
 						chunkServers.add(hbm.getNodeInformation());
 					}
+					
+					// update the chunkServers Hashmap
+					synchronized (filesWithChunksNodeInformationMap) {
+						if (filesWithChunksNodeInformationMap.containsKey(filename)) {	
+							filesWithChunksNodeInformationMap.get(filename).put(chunkNumber, chunkServers);
+						} else {
+							HashMap<Integer, ArrayList<NodeInformation>> tempMap = new HashMap<Integer, ArrayList<NodeInformation>>();
+							tempMap.put(chunkNumber, chunkServers);
+							filesWithChunksNodeInformationMap.put(filename, tempMap);
+						}
+					}
+					
+					// update the chunkServers Hashmap
+					/**
+					synchronized (chunkServersWithFilesChunksMap) {
+						for (NodeInformation cs : chunkServers) {
+							if (chunkServersWithFilesChunksMap.get(cs).containsKey(filename)) {
+								ArrayList<Integer> chunkNums = chunkServersWithFilesChunksMap.get(cs).get(filename);
+								chunkNums.add(chunkNumber);
+								chunkServersWithFilesChunksMap.put(cs, new HashMap<String, ArrayList<Integer>>());
+							}
+						}
+					}
+					
+					HashMap<Integer, ArrayList<HeartbeatMetadata>> tempMap = new HashMap<Integer, ArrayList<HeartbeatMetadata>>(chunkNumber);
+					tempMap.put(chunkNumber, hbArrayList);
+					filesOnChunkServersMap.put(filename, tempMap);
+					
+					**/
 					
 					// put the chunkserver nodeinformation into a message and send to client
 					ControllerChunkServersResponseToClient chunkServersResponse = new ControllerChunkServersResponseToClient(REPLICATION_LEVEL, chunkServers, chunkNumber, filename, timestamp);
@@ -290,7 +319,7 @@ public class Controller implements Node {
 				}
 			}
 			// clean up, add to the relevant collections and be sure to update the free space available on the chunk servers that are being used
-		}
+		//}
 	}
 	
 	private void handleClientReadRequest(Event event) {
@@ -303,13 +332,26 @@ public class Controller implements Node {
 		
 		try {
 			// make sure that the file is stored on a chunkserver first
-			if (filesOnChunkServersMap.containsKey(filename)) {
+			//if (filesOnChunkServersMap.containsKey(filename)) {
+			if (filesWithChunksNodeInformationMap.containsKey(filename)) {
 				// get the metadata for the chunkservers that hold the first value of the file
-				ArrayList<HeartbeatMetadata> HeartbeatMetadataList = filesOnChunkServersMap.get(filename).get(chunkNumber);
+				// get the chunk servers associated with the file
+				ArrayList<NodeInformation> chunkServers = filesWithChunksNodeInformationMap.get(filename).get(chunkNumber);
+				int totalNumberOfFiles = filesWithChunksNodeInformationMap.get(filename).size();
 				
-				int totalNumberOfFiles = filesOnChunkServersMap.get(filename).values().stream().mapToInt(List::size).sum();
+				//ArrayList<HeartbeatMetadata> HeartbeatMetadataList = filesOnChunkServersMap.get(filename).get(chunkNumber);
+				
+				// get the first chunk server stored and try that one
+				if (!chunkServers.isEmpty()) {
+					ControllerChunkServerToReadResponseToClient controllerReponse = new ControllerChunkServerToReadResponseToClient(chunkServers.get(0), chunkNumber, filename, totalNumberOfFiles);
+					this.clientNodesMap.get(clientNode).sendData(controllerReponse.getBytes());
+				} else {
+					System.out.println("No ChunkServers available to read the file from.");
+				
+				//int totalNumberOfFiles = filesOnChunkServersMap.get(filename).values().stream().mapToInt(List::size).sum();
 				
 				// get the first metadata information stored for the file and try that one
+				/**
 				if (!HeartbeatMetadataList.isEmpty()) {
 					NodeInformation chunkServer = HeartbeatMetadataList.get(0).getNodeInformation();
 					
@@ -319,15 +361,15 @@ public class Controller implements Node {
 					this.clientNodesMap.get(clientNode).sendData(controllerReponse.getBytes());
 					
 				} else {
-					System.out.println("No ChunkServers available to read the file from.");
+				**/
+					//System.out.println("No ChunkServers available to read the file from.");
 				}
 			} else {
-			System.out.println("File is not stored on any server.");
+				System.out.println("File is not stored on any server.");
 			}
 		} catch  (IOException ioe) {
 			ioe.printStackTrace();
 		} 
-		
 		if (DEBUG) { System.out.println("end Controller handleClientReadRequest"); }
 	}
 	
@@ -382,17 +424,64 @@ public class Controller implements Node {
 		synchronized (this.chunkServerHeartbeatMetadaList) {
 			if (!deadChunkServers.isEmpty()) {
 				for (NodeInformation deadChunkServer : deadChunkServers) {
-					//NodeInformation chunkServerToUpdate = this.chunkServerHeartbeatMetadaList.get(deadChunkServer);
+					// find the files that are associated with the dead chunk server
 					
-					// well Daniel, now you're stuck here. What you need to do is find all metadata associated with the dead chunk server and replicate it on another server
-					
-					// consider refactoring the way that you store metadata with each file here. It's actually a little incorrect because it's the whole metadata. Maybe instead store the NodeInformation as the value in the map associated with a given file name?
-					
-					// otherwise, consider building a new structure for holding file names and node informations that hold specific chunks. But what the fix is that is descirbed above should do the same thing, unless that object is being used somewhere, which I don't think it is. At least not correctly.
-					
-					// good luck you. Then you need to do healing on bad files. Then you can test.
-					
+					synchronized (filesWithChunksNodeInformationMap) {
+						for (String filename : filesWithChunksNodeInformationMap.keySet()) {
+							
+							HashMap<Integer, ArrayList<NodeInformation>> fileentry = filesWithChunksNodeInformationMap.get(filename);
+							for (int chunkNumber : fileentry.keySet()) {
+								ArrayList<NodeInformation> chunkServers = fileentry.get(chunkNumber);
+								if (chunkServers.contains(deadChunkServer)) {
+									chunkServers.remove(deadChunkServer);
+									
+									ArrayList<HeartbeatMetadata> tempHbmList = new ArrayList<HeartbeatMetadata>();
+									for (HeartbeatMetadata hbm : this.chunkServerHeartbeatMetadaList.values()) {
+										tempHbmList.add(hbm);
+									}
+									tempHbmList.sort((h1, h2) -> Long.compare(h2.getFreeSpaceAvailable(), h1.getFreeSpaceAvailable()));
+									
+									NodeInformation newChunkServer = null;
+									
+									// get the first chunk server available that is not currently in the list
+									for (int i = 0; i < tempHbmList.size(); i++) {
+										if (!chunkServers.contains(tempHbmList.get(i).getNodeInformation())) {
+											newChunkServer = tempHbmList.get(i).getNodeInformation();
+											break;
+										}
+									}
+									
+									if (newChunkServer != null) {
+										// get another active chunk server to update this node information provided it is not also currently one of our potential dead chunk servers
+										for (NodeInformation ni : chunkServers) {
+											if (!deadChunkServers.contains(ni)) {
+												try {
+												
+													NodeInformation activeChunkServer = ni;
+													
+													// update local information with new data that will be stored on this chunk server
+													HashMap<Integer, ArrayList<NodeInformation>> tempMap = new HashMap<Integer, ArrayList<NodeInformation>>();
+													chunkServers.add(newChunkServer);
+													tempMap.put(chunkNumber, chunkServers);
+													filesWithChunksNodeInformationMap.put(filename, tempMap);
+													
+													ControllerForwardDataToNewChunkServer forwardData = new ControllerForwardDataToNewChunkServer(newChunkServer, chunkNumber, filename);
+													
+													this.chunkServerNodesMap.get(activeChunkServer).sendData(forwardData.getBytes());
+												} catch (IOException e) {
+													e.printStackTrace();
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
 					this.chunkServerHeartbeatMetadaList.remove(deadChunkServer);
+					synchronized (chunkServerNodesMap) {
+						this.chunkServerNodesMap.remove(deadChunkServer);
+					}
 				}
 			}
 		}
