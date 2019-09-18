@@ -58,6 +58,10 @@ public class EventFactory {
 				case Protocol.CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER:
 					event = new ClientChunkServerRequestToController(marshalledBytes);
 					break;
+				// CONTROLLER_FORWARD_CORRUPT_CHUNK_TO_CHUNKSERVER = 6006
+				case Protocol.CONTROLLER_FORWARD_CORRUPT_CHUNK_TO_CHUNKSERVER:
+					event = new ControllerForwardFixCorruptChunkToChunkServer(marshalledBytes);
+					break;
 				// CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER = 7000
 				case Protocol.CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER:
 					event = new ChunkServerRegisterRequestToController(marshalledBytes);
@@ -77,6 +81,22 @@ public class EventFactory {
 				// CHUNKSERVER_SEND_MINOR_HEARTBEAT_T0_CONTROLLER = 7004
 				case Protocol.CHUNKSERVER_SEND_MINOR_HEARTBEAT_T0_CONTROLLER:
 					event = new ChunkServerSendMinorHeartbeatToController(marshalledBytes);
+					break;
+				// CHUNKSERVER_SEND_CORRUPT_CHUNK_T0_CONTROLLER = 7005
+				case Protocol.CHUNKSERVER_SEND_CORRUPT_CHUNK_T0_CONTROLLER:
+					event = new ChunkServerSendCorruptChunkToController(marshalledBytes);
+					break;
+				// CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER = 7006
+				case Protocol.CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER:
+					event = new ChunkServerFixCorruptChunkToChunkServer(marshalledBytes);
+					break;
+				// CHUNKSERVER_DELETED_CHUNK_TO_CONTROLLER = 7007
+				case Protocol.CHUNKSERVER_DELETED_CHUNK_TO_CONTROLLER:
+					event = new ChunkServerDeletedChunkToController(marshalledBytes);
+					break;
+				// CHUNKSERVER_NOTIFY_FIX_SUCCESS_TO_CONTROLLER = 7008
+				case Protocol.CHUNKSERVER_NOTIFY_FIX_SUCCESS_TO_CONTROLLER:
+					event = new ChunkServerNotifyFixSuccessToController(marshalledBytes);
 					break;
 				// CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8000
 				case Protocol.CLIENT_REGISTER_REQUEST_TO_CONTROLLER:
