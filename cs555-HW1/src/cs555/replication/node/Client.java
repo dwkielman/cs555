@@ -45,10 +45,10 @@ public class Client implements Node {
 	private TCPReceiverThread clientTCPReceiverThread;
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
-	private TCPSender clientSender;
+	private TCPSender controllerSender;
 	private boolean accessUserInput;
 	private ArrayList<byte[]> fileIntoChunks;
-	private static NodeInformation clientNodeInformation;
+	private NodeInformation clientNodeInformation;
 	private HashMap<String, HashMap<Integer, byte[]>> receivedChunksMap;
 	
 	private static final int SIZE_OF_CHUNK = 1024 * 64;
@@ -73,7 +73,8 @@ public class Client implements Node {
 		} catch (UnknownHostException uhe) {
 			uhe.printStackTrace();
 		}
-		// Once the initialization is complete, MessagingNode should send a registration request to the Registry.
+		this.clientNodeInformation = new NodeInformation(this.localHostIPAddress, this.localHostPortNumber);
+		// Once the initialization is complete, client should send a registration request to the controller.
 		connectToController();
 	}
 	
@@ -137,7 +138,7 @@ public class Client implements Node {
 		}
 		
 		Client client = new Client(controllerIPAddress, controllerPortNumber);
-		clientNodeInformation = new NodeInformation(client.localHostIPAddress, client.localHostPortNumber);
+		
 		handleUserInput(client);
 	}
 	
@@ -202,13 +203,13 @@ public class Client implements Node {
 			System.out.println("TCPReceiverThread with Controller started");
 			System.out.println("Sending to " + this.controllerNodeInformation.getNodeIPAddress() + " on Port " +  this.controllerNodeInformation.getNodePortNumber());
 			
-			this.clientSender = new TCPSender(controllerSocket);
+			this.controllerSender = new TCPSender(controllerSocket);
 			
 			ClientRegisterRequestToController clientRegisterRequest = new ClientRegisterRequestToController(clientNodeInformation.getNodeIPAddress(), clientNodeInformation.getNodePortNumber());
 
 			if (DEBUG) { System.out.println("ChunkServer about to send message type: " + clientRegisterRequest.getType()); }
 			
-			this.clientSender.sendData(clientRegisterRequest.getBytes());
+			this.controllerSender.sendData(clientRegisterRequest.getBytes());
 		} catch (IOException ioe) {
 			ioe.printStackTrace();
 			System.exit(1);
@@ -239,7 +240,7 @@ public class Client implements Node {
 		
 		try {
 			ClientChunkServerRequestToController chunkServersRequest = new ClientChunkServerRequestToController(clientNodeInformation, chunkNumber, filename, timestamp);
-			this.clientSender.sendData(chunkServersRequest.getBytes());
+			this.controllerSender.sendData(chunkServersRequest.getBytes());
 
 		} catch (IOException ioe) {
 			ioe.printStackTrace();
@@ -253,7 +254,7 @@ public class Client implements Node {
 		
 		try {
 			ClientReadFileRequestToController readRequest = new ClientReadFileRequestToController(clientNodeInformation, filename, chunkNumber);
-			this.clientSender.sendData(readRequest.getBytes());
+			this.controllerSender.sendData(readRequest.getBytes());
 			
 		} catch (IOException ioe) {
 			ioe.printStackTrace();
