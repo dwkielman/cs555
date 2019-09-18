@@ -5,14 +5,11 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import cs555.replication.transport.TCPControllerHeartbeat;
-import cs555.replication.transport.TCPHeartbeat;
 import cs555.replication.transport.TCPSender;
 import cs555.replication.transport.TCPServerThread;
 import cs555.replication.util.HeartbeatMetadata;
@@ -24,6 +21,7 @@ import cs555.replication.wireformats.ChunkServerRegisterRequestToController;
 import cs555.replication.wireformats.ChunkServerSendCorruptChunkToController;
 import cs555.replication.wireformats.ChunkServerSendMajorHeartbeatToController;
 import cs555.replication.wireformats.ChunkServerSendMinorHeartbeatToController;
+import cs555.replication.wireformats.ChunkServerSendOnlyCorruptChunkToController;
 import cs555.replication.wireformats.ClientChunkServerRequestToController;
 import cs555.replication.wireformats.ClientReadFileRequestToController;
 import cs555.replication.wireformats.ClientRegisterRequestToController;
@@ -31,6 +29,7 @@ import cs555.replication.wireformats.ControllerChunkServerToReadResponseToClient
 import cs555.replication.wireformats.ControllerChunkServersResponseToClient;
 import cs555.replication.wireformats.ControllerForwardDataToNewChunkServer;
 import cs555.replication.wireformats.ControllerForwardFixCorruptChunkToChunkServer;
+import cs555.replication.wireformats.ControllerForwardOnlyFixCorruptChunkToChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToClient;
 import cs555.replication.wireformats.Event;
@@ -52,8 +51,6 @@ public class Controller implements Node {
 	private HashMap<NodeInformation, TCPSender> clientNodesMap;
 	private HashMap<NodeInformation, HeartbeatMetadata> chunkServerHeartbeatMetadaList;
 	private ArrayList<NodeInformation> deadChunkServers;
-	private HashMap<String, HashMap<Integer, ArrayList<HeartbeatMetadata>>> filesOnChunkServersMap;
-	private HashMap<NodeInformation, HashMap<String, ArrayList<Integer>>> chunkServersWithFilesChunksMap;
 	private HashMap<String, HashMap<Integer, ArrayList<NodeInformation>>> filesWithChunksNodeInformationMap;
 	private static final int REPLICATION_LEVEL = 3;
 	public static Controller controller;
@@ -63,8 +60,6 @@ public class Controller implements Node {
 		this.chunkServerNodesMap = new HashMap<NodeInformation, TCPSender>();
 		this.chunkServerHeartbeatMetadaList = new  HashMap<NodeInformation, HeartbeatMetadata>();
 		this.deadChunkServers = new ArrayList<NodeInformation>();
-		this.filesOnChunkServersMap = new HashMap<String, HashMap<Integer, ArrayList<HeartbeatMetadata>>>();
-		this.chunkServersWithFilesChunksMap = new HashMap<NodeInformation, HashMap<String, ArrayList<Integer>>>();
 		this.filesWithChunksNodeInformationMap = new HashMap<String, HashMap<Integer, ArrayList<NodeInformation>>>();
 		
 		try {
@@ -85,20 +80,20 @@ public class Controller implements Node {
 	public Controller() {}
 	
 	public void addDeadChunkServer(NodeInformation deadChunkServer) {
-		synchronized (this.deadChunkServers) {
-			this.deadChunkServers.add(deadChunkServer);
+		synchronized (deadChunkServers) {
+			deadChunkServers.add(deadChunkServer);
 		}
 	}
 	
 	public TCPSender getChunkServerSender(NodeInformation chunkServer) {
-		synchronized (this.chunkServerNodesMap) {
-			return this.chunkServerNodesMap.get(chunkServer);
+		synchronized (chunkServerNodesMap) {
+			return chunkServerNodesMap.get(chunkServer);
 		}
 	}
 	
 	public Set<NodeInformation> getLiveChunkServers() {
-		synchronized (this.chunkServerHeartbeatMetadaList) {
-			return this.chunkServerHeartbeatMetadaList.keySet();
+		synchronized (chunkServerHeartbeatMetadaList) {
+			return chunkServerHeartbeatMetadaList.keySet();
 		}
 	}
 	
@@ -119,8 +114,6 @@ public class Controller implements Node {
 			nfe.printStackTrace();
 		}
 		
-		controller = new Controller(controllerPortNumber);
-		
 		String controllerIP = "";
 		
         try{
@@ -130,6 +123,7 @@ public class Controller implements Node {
         }
 
         System.out.println("Controller is running at IP Address: " + controllerIP + " on Port Number: " + controller.portNumber);
+        controller = new Controller(controllerPortNumber);
 	}
 	
 	@Override
@@ -161,7 +155,11 @@ public class Controller implements Node {
 			case Protocol.CHUNKSERVER_NOTIFY_FIX_SUCCESS_TO_CONTROLLER:
 				handleChunkServerNotifyFixSuccessToController(event);
 				break;
-				// CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8000
+			// CHUNKSERVER_SEND_ONLY_CORRUPT_CHUNK_T0_CONTROLLER = 7009
+			case Protocol.CHUNKSERVER_SEND_ONLY_CORRUPT_CHUNK_T0_CONTROLLER:
+				handleChunkServerSendOnlyCorruptChunkToController(event);
+				break;
+			// CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8000
 			case Protocol.CLIENT_REGISTER_REQUEST_TO_CONTROLLER:
 				handleClientRegisterRequest(event);
 				break;
@@ -208,16 +206,17 @@ public class Controller implements Node {
 			String message = "";
 			
 			// success, node is not currently registered so adding to the map of nodes
-			if (!this.chunkServerNodesMap.containsKey(ni)) {
-				this.chunkServerNodesMap.put(ni, sender);
-				this.chunkServerHeartbeatMetadaList.put(ni, hbm);
-				//this.chunkServerHeartbeatMetadaList.add(hbm);
-				System.out.println("Chunk Server Registration request successful. The number of Chunk Servers currently running on the Controller is (" + this.chunkServerNodesMap.size() + ")");
-				status = (byte) 1;
-				message = "Chunk Server Registered";
-			} else {
-				status = (byte) 0;
-				message = "Chunk Server already registered. No action taken";
+			synchronized (chunkServerNodesMap) {
+				if (!this.chunkServerNodesMap.containsKey(ni)) {
+					this.chunkServerNodesMap.put(ni, sender);
+					this.chunkServerHeartbeatMetadaList.put(ni, hbm);
+					System.out.println("Chunk Server Registration request successful. The number of Chunk Servers currently running on the Controller is (" + this.chunkServerNodesMap.size() + ")");
+					status = (byte) 1;
+					message = "Chunk Server Registered";
+				} else {
+					status = (byte) 0;
+					message = "Chunk Server already registered. No action taken";
+				}
 			}
 			
 			ControllerRegisterResponseToChunkServer chunkServerRegisterResponse = new ControllerRegisterResponseToChunkServer(status, message);
@@ -248,14 +247,16 @@ public class Controller implements Node {
 			String message = "";
 			
 			// success, node is not currently registered so adding to the map of nodes
-			if (!this.clientNodesMap.containsKey(ni)) {
-				this.clientNodesMap.put(ni, sender);
-				System.out.println("Client Registration request successful. The number of Clients currently running on the Controller is (" + this.clientNodesMap.size() + ")");
-				status = (byte) 1;
-				message = "Client Registered";
-			} else {
-				status = (byte) 0;
-				message = "Client already registered. No action taken";
+			synchronized (clientNodesMap) {
+				if (!this.clientNodesMap.containsKey(ni)) {
+					this.clientNodesMap.put(ni, sender);
+					System.out.println("Client Registration request successful. The number of Clients currently running on the Controller is (" + this.clientNodesMap.size() + ")");
+					status = (byte) 1;
+					message = "Client Registered";
+				} else {
+					status = (byte) 0;
+					message = "Client already registered. No action taken";
+				}
 			}
 			
 			ControllerRegisterResponseToClient clientRegisterResponse = new ControllerRegisterResponseToClient(status, message);
@@ -349,43 +350,46 @@ public class Controller implements Node {
 		try {
 			// make sure that the file is stored on a chunkserver first
 			//if (filesOnChunkServersMap.containsKey(filename)) {
-			if (filesWithChunksNodeInformationMap.containsKey(filename)) {
-				// get the metadata for the chunkservers that hold the first value of the file
-				// get the chunk servers associated with the file
-				ArrayList<NodeInformation> chunkServers = filesWithChunksNodeInformationMap.get(filename).get(chunkNumber);
-				int totalNumberOfFiles = filesWithChunksNodeInformationMap.get(filename).size();
-				
-				//ArrayList<HeartbeatMetadata> HeartbeatMetadataList = filesOnChunkServersMap.get(filename).get(chunkNumber);
-				
-				// get the first chunk server stored and try that one
-				if (!chunkServers.isEmpty()) {
-					ControllerChunkServerToReadResponseToClient controllerReponse = new ControllerChunkServerToReadResponseToClient(chunkServers.get(0), chunkNumber, filename, totalNumberOfFiles);
-					this.clientNodesMap.get(clientNode).sendData(controllerReponse.getBytes());
+			synchronized (filesWithChunksNodeInformationMap) {
+				if (filesWithChunksNodeInformationMap.containsKey(filename)) {
+					// get the metadata for the chunkservers that hold the first value of the file
+					// get the chunk servers associated with the file
+					ArrayList<NodeInformation> chunkServers = filesWithChunksNodeInformationMap.get(filename).get(chunkNumber);
+					int totalNumberOfFiles = filesWithChunksNodeInformationMap.get(filename).size();
+					
+					//ArrayList<HeartbeatMetadata> HeartbeatMetadataList = filesOnChunkServersMap.get(filename).get(chunkNumber);
+					
+					// get the first chunk server stored and try that one
+					if (!chunkServers.isEmpty()) {
+						ControllerChunkServerToReadResponseToClient controllerReponse = new ControllerChunkServerToReadResponseToClient(chunkServers.get(0), chunkNumber, filename, totalNumberOfFiles);
+						this.clientNodesMap.get(clientNode).sendData(controllerReponse.getBytes());
+					} else {
+						System.out.println("No ChunkServers available to read the file from.");
+					
+					//int totalNumberOfFiles = filesOnChunkServersMap.get(filename).values().stream().mapToInt(List::size).sum();
+					
+					// get the first metadata information stored for the file and try that one
+					/**
+					if (!HeartbeatMetadataList.isEmpty()) {
+						NodeInformation chunkServer = HeartbeatMetadataList.get(0).getNodeInformation();
+						
+						// put the chunkserver nodeinformation into a message and send to client
+						ControllerChunkServerToReadResponseToClient controllerReponse = new ControllerChunkServerToReadResponseToClient(chunkServer, chunkNumber, filename, totalNumberOfFiles);
+						
+						this.clientNodesMap.get(clientNode).sendData(controllerReponse.getBytes());
+						
+					} else {
+					**/
+						//System.out.println("No ChunkServers available to read the file from.");
+					}
 				} else {
-					System.out.println("No ChunkServers available to read the file from.");
-				
-				//int totalNumberOfFiles = filesOnChunkServersMap.get(filename).values().stream().mapToInt(List::size).sum();
-				
-				// get the first metadata information stored for the file and try that one
-				/**
-				if (!HeartbeatMetadataList.isEmpty()) {
-					NodeInformation chunkServer = HeartbeatMetadataList.get(0).getNodeInformation();
-					
-					// put the chunkserver nodeinformation into a message and send to client
-					ControllerChunkServerToReadResponseToClient controllerReponse = new ControllerChunkServerToReadResponseToClient(chunkServer, chunkNumber, filename, totalNumberOfFiles);
-					
-					this.clientNodesMap.get(clientNode).sendData(controllerReponse.getBytes());
-					
-				} else {
-				**/
-					//System.out.println("No ChunkServers available to read the file from.");
+					System.out.println("File is not stored on any server.");
 				}
-			} else {
-				System.out.println("File is not stored on any server.");
 			}
 		} catch  (IOException ioe) {
 			ioe.printStackTrace();
 		} 
+			
 		if (DEBUG) { System.out.println("end Controller handleClientReadRequest"); }
 	}
 	
@@ -539,6 +543,58 @@ public class Controller implements Node {
 		}
 		
 		if (DEBUG) { System.out.println("end Controller handleChunkServerSendCorruptChunkToController"); }
+	}
+	
+	private void handleChunkServerSendOnlyCorruptChunkToController(Event event) {
+		if (DEBUG) { System.out.println("begin Controller handleChunkServerSendOnlyCorruptChunkToController"); }
+		
+	ChunkServerSendOnlyCorruptChunkToController sendCorruptChunk = (ChunkServerSendOnlyCorruptChunkToController) event;
+		
+		String filename = sendCorruptChunk.getFilename();
+		int chunknumber = sendCorruptChunk.getChunknumber();
+		NodeInformation corruptChunkServer = sendCorruptChunk.getChunkServer();
+		
+		synchronized (filesWithChunksNodeInformationMap) {
+			if (filesWithChunksNodeInformationMap.containsKey(filename)) {
+				HashMap<Integer, ArrayList<NodeInformation>> tempMap = filesWithChunksNodeInformationMap.get(filename);
+				if (tempMap.containsKey(chunknumber)) {
+					ArrayList<NodeInformation> chunkServers = tempMap.get(chunknumber);
+					
+					if (!chunkServers.isEmpty()) {
+						if (chunkServers.contains(corruptChunkServer)) {
+							chunkServers.remove(corruptChunkServer);
+						}
+						if (!chunkServers.isEmpty()) {
+							try {
+								NodeInformation activeChunkServer = chunkServers.get(0);
+								// update our map with the removed chunk server so it's not sent to again for this chunk number on this filename
+								tempMap.put(chunknumber, chunkServers);
+								filesWithChunksNodeInformationMap.put(filename, tempMap);
+
+								int numberOfBadSlices = sendCorruptChunk.getNumberOfBadSlices();
+								ArrayList<Integer> badSlices = sendCorruptChunk.getBadSlices();
+								
+								ControllerForwardOnlyFixCorruptChunkToChunkServer fixCorrupt = new ControllerForwardOnlyFixCorruptChunkToChunkServer(corruptChunkServer, chunknumber, filename, numberOfBadSlices, badSlices);
+								
+								this.chunkServerNodesMap.get(activeChunkServer).sendData(fixCorrupt.getBytes());
+							} catch (IOException e) {
+								e.printStackTrace();
+							}
+						} else {
+							System.out.println("No Chunk Servers available after removing corrupt chunk server.");
+						}
+					} else {
+						System.out.println("No Chunk Servers available at all.");
+					}
+				} else {
+					System.out.println("File does not have a chunk number that exists on any known chunk server.");
+				}
+			} else {
+				System.out.println("File does not exist on any known chunk server.");
+			}
+		}
+		
+		if (DEBUG) { System.out.println("end Controller handleChunkServerSendOnlyCorruptChunkToController"); }
 	}
 	
 	public void updateDeadChunkServers() {

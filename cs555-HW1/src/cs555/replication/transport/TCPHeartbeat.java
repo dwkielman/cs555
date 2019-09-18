@@ -14,6 +14,7 @@ public class TCPHeartbeat implements Runnable {
 	private NodeInformation chunkServerNodeInformation;
 	private static final long TIME_TO_SLEEP = 30000;
 	private int numberOfMinorsToSend;
+	private static final boolean DEBUG = true;
 	
 	public TCPHeartbeat(ChunkServer chunkServer, NodeInformation chunkServerNodeInformation) {
 		this.chunkServer = chunkServer;
@@ -30,6 +31,8 @@ public class TCPHeartbeat implements Runnable {
 				
 				if ((this.numberOfMinorsToSend % 10) == 0) {
 					// major heartbeat from now on
+					if (DEBUG) {System.out.println("ChunkServer sending Major Heartbeat to Controller."); }
+					
 					this.numberOfMinorsToSend = 0;
 					
 					long freespace = chunkServer.getFreeSpaceAvailable();
@@ -43,6 +46,8 @@ public class TCPHeartbeat implements Runnable {
 					
 				} else {
 					// minor heartbeats, 10 minors until 5 minutes have passed
+					if (DEBUG) {System.out.println("ChunkServer sending Minor Heartbeat to Controller."); }
+					
 					ArrayList<Metadata> metadata = chunkServer.getNewFilesWithMetadataMap();
 					long freespace = chunkServer.getFreeSpaceAvailable();
 					int numberOfChunks = chunkServer.getNumberOfChunksStored();

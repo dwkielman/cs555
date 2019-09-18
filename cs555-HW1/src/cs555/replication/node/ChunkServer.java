@@ -17,16 +17,19 @@ import cs555.replication.transport.TCPSender;
 import cs555.replication.transport.TCPServerThread;
 import cs555.replication.util.Metadata;
 import cs555.replication.util.NodeInformation;
+import cs555.replication.wireformats.ChunkServerDeletedChunkToController;
 import cs555.replication.wireformats.ChunkServerFixCorruptChunkToChunkServer;
 import cs555.replication.wireformats.ChunkServerNotifyFixSuccessToController;
 import cs555.replication.wireformats.ChunkServerRegisterRequestToController;
 import cs555.replication.wireformats.ChunkServerSendChunkToClient;
 import cs555.replication.wireformats.ChunkServerSendChunkToLastChunkServer;
 import cs555.replication.wireformats.ChunkServerSendCorruptChunkToController;
+import cs555.replication.wireformats.ChunkServerSendOnlyCorruptChunkToController;
 import cs555.replication.wireformats.ClientRequestToReadFromChunkServer;
 import cs555.replication.wireformats.ClientSendChunkToChunkServer;
 import cs555.replication.wireformats.ControllerForwardDataToNewChunkServer;
 import cs555.replication.wireformats.ControllerForwardFixCorruptChunkToChunkServer;
+import cs555.replication.wireformats.ControllerForwardOnlyFixCorruptChunkToChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToChunkServer;
 import cs555.replication.wireformats.Event;
 import cs555.replication.wireformats.Protocol;
@@ -52,7 +55,7 @@ public class ChunkServer implements Node {
 	private TCPReceiverThread chunkServerTCPReceiverThread;
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
-	private TCPSender chunkServerSender;
+	private TCPSender controllerSender;
 	private static ChunkServer chunkServer;
 	private static NodeInformation chunkServerNodeInformation;
 	
@@ -60,21 +63,25 @@ public class ChunkServer implements Node {
 
 	public ChunkServer() {}
 	
+	// public methods for access in the heartbeats
 	public ArrayList<Metadata> getFilesWithMetadataMap() {
 		ArrayList<Metadata> metadataList = new ArrayList<Metadata>();
-		for (Metadata m : this.filesWithMetadataMap.values()) {
-			metadataList.add(m);
+		synchronized (filesWithMetadataMap ) {
+			for (Metadata m : this.filesWithMetadataMap.values()) {
+				metadataList.add(m);
+			}
 		}
-		
 		return metadataList;
 	}
 	
 	public ArrayList<Metadata> getNewFilesWithMetadataMap() {
-		return this.newMetadataList;
+		synchronized (newMetadataList) {
+			return newMetadataList;
+		}
 	}
 	
 	public void clearNewMetadataList() {
-		synchronized (this.newMetadataList){
+		synchronized (newMetadataList){
 			this.newMetadataList.clear();
 		}
 	}
@@ -85,14 +92,16 @@ public class ChunkServer implements Node {
 	
 	public int getNumberOfChunksStored() {
 		int totalNumberOfChunks = 0;
-		for (ArrayList<Integer> chunkList : filesWithChunkNumberMap.values()) {
-			totalNumberOfChunks += chunkList.size();
+		synchronized (filesWithChunkNumberMap) {
+			for (ArrayList<Integer> chunkList : filesWithChunkNumberMap.values()) {
+				totalNumberOfChunks += chunkList.size();
+			}
 		}
 		return totalNumberOfChunks;
 	}
 	
 	public TCPSender getChunkServerSender() {
-		return this.chunkServerSender;
+		return this.controllerSender;
 	}
 	
 	private ChunkServer(String controllerIPAddress, int controllerPortNumber) {
@@ -115,7 +124,7 @@ public class ChunkServer implements Node {
 		} catch (UnknownHostException uhe) {
 			uhe.printStackTrace();
 		}
-		// Once the initialization is complete, MessagingNode should send a registration request to the Registry.
+		// Once the initialization is complete, chunkServer should send a registration request to the controller.
 		connectToController();
 	}
 	
@@ -135,6 +144,10 @@ public class ChunkServer implements Node {
 			// CONTROLLER_FORWARD_CORRUPT_CHUNK_TO_CHUNKSERVER = 6006
 			case Protocol.CONTROLLER_FORWARD_CORRUPT_CHUNK_TO_CHUNKSERVER:
 				handleControllerForwardFixCorruptChunkToChunkServer(event);
+				break;
+			// CONTROLLER_FORWARD_ONLY_CORRUPT_CHUNK_TO_CHUNKSERVER = 6007
+			case Protocol.CONTROLLER_FORWARD_ONLY_CORRUPT_CHUNK_TO_CHUNKSERVER:
+				handleControllerForwardOnlyFixCorruptChunkToChunkServer(event);
 				break;
 			// CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER = 7001
 			case Protocol.CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER:
@@ -165,9 +178,9 @@ public class ChunkServer implements Node {
 	
 	public static void main(String[] args) {
 		
-		// requires 2 arguments to initialize a node
+		// requires 2 arguments to initialize a chunkServer
 		if(args.length != 2) {
-            System.out.println("Invalid Arguments. Must include host name and port number.");
+            System.out.println("Invalid Arguments. Must include controller host name and port number.");
             return;
         }
 		
@@ -208,7 +221,7 @@ public class ChunkServer implements Node {
 			System.out.println("TCPReceiverThread with Controller started");
 			System.out.println("Sending to " + this.controllerNodeInformation.getNodeIPAddress() + " on Port " +  this.controllerNodeInformation.getNodePortNumber());
 			
-			this.chunkServerSender = new TCPSender(controllerSocket);
+			this.controllerSender = new TCPSender(controllerSocket);
 			
 			File file = new File(FILE_LOCATION);
 			long freeSpace = file.getFreeSpace();
@@ -217,7 +230,7 @@ public class ChunkServer implements Node {
 
 			if (DEBUG) { System.out.println("ChunkServer about to send message type: " + chunkServerRegisterRequest.getType()); }
 			
-			this.chunkServerSender.sendData(chunkServerRegisterRequest.getBytes());
+			this.controllerSender.sendData(chunkServerRegisterRequest.getBytes());
 		} catch (IOException ioe) {
 			ioe.printStackTrace();
 			System.exit(1);
@@ -228,7 +241,7 @@ public class ChunkServer implements Node {
 	private void handleChunkServerRegisterResponse(Event event) {
 		if (DEBUG) { System.out.println("begin ChunkServer handleChunkServerRegisterResponse"); }
 		ControllerRegisterResponseToChunkServer chunkServerRegisterResponse = (ControllerRegisterResponseToChunkServer) event;
-		if (DEBUG) { System.out.println("MessagingNode got a message type: " + chunkServerRegisterResponse.getType()); }
+		if (DEBUG) { System.out.println("ChunkServer got a message type: " + chunkServerRegisterResponse.getType()); }
 		
 		// successful registration
 		if (chunkServerRegisterResponse.getStatusCode() == (byte) 1) {
@@ -260,32 +273,34 @@ public class ChunkServer implements Node {
 		ArrayList<Integer> chunkNumbers = new ArrayList<Integer>();
 		
 		// file is not currently stored on the server, need to add it for the first time
-		if (!filesWithChunkNumberMap.containsKey(filename)) {
-			chunkNumbers.add(chunkNumber);
-			filesWithChunkNumberMap.put(filename, chunkNumbers);
-			saveFile(filename, chunkData, chunkNumber, version);
-		} else {
-		// file already exists on the server, could be a new chunk number or one that already exists
-			chunkNumbers = filesWithChunkNumberMap.get(filename);
-			
-			// if the chunkNumber isn't already stored, then add the new chunk data to the existing filename
-			if (!chunkNumbers.contains(chunkNumber)) {
-				filesWithChunkNumberMap.get(filename).add(chunkNumber);
+		synchronized (filesWithChunkNumberMap) {
+			if (!filesWithChunkNumberMap.containsKey(filename)) {
+				chunkNumbers.add(chunkNumber);
+				filesWithChunkNumberMap.put(filename, chunkNumbers);
 				saveFile(filename, chunkData, chunkNumber, version);
 			} else {
-				// make sure that the timestamp is more recent than the one that is currently stored on the server
-				// make sure we have metadata for the file before trying to update it
-				String metadataFilename = filename + "_chunk" + chunkNumber;
-				if (filesWithMetadataMap.containsKey(metadataFilename) ) {
-					Metadata metadata = filesWithMetadataMap.get(metadataFilename);
-					long metadataTimestamp = metadata.getTimestamp();
-					
-					// metadata is older than the new file
-					if (metadataTimestamp < timestamp) {
-						int newVersionNumber = metadata.getVersionInfoNumber() + 1;
-						saveFile(filename, chunkData, chunkNumber, newVersionNumber);
-					} else {
-						System.out.println("No action taken, file sent is older than the previous version.");
+			// file already exists on the server, could be a new chunk number or one that already exists
+				chunkNumbers = filesWithChunkNumberMap.get(filename);
+				
+				// if the chunkNumber isn't already stored, then add the new chunk data to the existing filename
+				if (!chunkNumbers.contains(chunkNumber)) {
+					filesWithChunkNumberMap.get(filename).add(chunkNumber);
+					saveFile(filename, chunkData, chunkNumber, version);
+				} else {
+					// make sure that the timestamp is more recent than the one that is currently stored on the server
+					// make sure we have metadata for the file before trying to update it
+					String metadataFilename = filename + "_chunk" + chunkNumber;
+					if (filesWithMetadataMap.containsKey(metadataFilename) ) {
+						Metadata metadata = filesWithMetadataMap.get(metadataFilename);
+						long metadataTimestamp = metadata.getTimestamp();
+						
+						// metadata is older than the new file
+						if (metadataTimestamp < timestamp) {
+							int newVersionNumber = metadata.getVersionInfoNumber() + 1;
+							saveFile(filename, chunkData, chunkNumber, newVersionNumber);
+						} else {
+							System.out.println("No action taken, file sent is older than the previous version.");
+						}
 					}
 				}
 			}
@@ -336,33 +351,37 @@ public class ChunkServer implements Node {
 		int version = 1;
 		ArrayList<Integer> chunkNumbers = new ArrayList<Integer>();
 		
-		// file is not currently stored on the server, need to add it for the first time
-		if (!filesWithChunkNumberMap.containsKey(filename)) {
-			chunkNumbers.add(chunkNumber);
-			filesWithChunkNumberMap.put(filename, chunkNumbers);
-			saveFile(filename, chunkData, chunkNumber, version);
-		} else {
-		// file already exists on the server, could be a new chunk number or one that already exists
-			chunkNumbers = filesWithChunkNumberMap.get(filename);
-			
-			// if the chunkNumber isn't already stored, then add the new chunk data to the existing filename
-			if (!chunkNumbers.contains(chunkNumber)) {
-				filesWithChunkNumberMap.get(filename).add(chunkNumber);
+		synchronized (filesWithChunkNumberMap) {
+			// file is not currently stored on the server, need to add it for the first time
+			if (!filesWithChunkNumberMap.containsKey(filename)) {
+				chunkNumbers.add(chunkNumber);
+				filesWithChunkNumberMap.put(filename, chunkNumbers);
 				saveFile(filename, chunkData, chunkNumber, version);
 			} else {
-				// make sure that the timestamp is more recent than the one that is currently stored on the server
-				// make sure we have metadata for the file before trying to update it
-				String metadataFilename = filename + "_chunk" + chunkNumber;
-				if (filesWithMetadataMap.containsKey(metadataFilename) ) {
-					Metadata metadata = filesWithMetadataMap.get(metadataFilename);
-					long metadataTimestamp = metadata.getTimestamp();
-					
-					// metadata is older than the new file
-					if (metadataTimestamp < timestamp) {
-						int newVersionNumber = metadata.getVersionInfoNumber() + 1;
-						saveFile(filename, chunkData, chunkNumber, newVersionNumber);
-					} else {
-						System.out.println("No action taken, file sent is older than the previous version.");
+			// file already exists on the server, could be a new chunk number or one that already exists
+				chunkNumbers = filesWithChunkNumberMap.get(filename);
+				
+				// if the chunkNumber isn't already stored, then add the new chunk data to the existing filename
+				if (!chunkNumbers.contains(chunkNumber)) {
+					filesWithChunkNumberMap.get(filename).add(chunkNumber);
+					saveFile(filename, chunkData, chunkNumber, version);
+				} else {
+					// make sure that the timestamp is more recent than the one that is currently stored on the server
+					// make sure we have metadata for the file before trying to update it
+					String metadataFilename = filename + "_chunk" + chunkNumber;
+					synchronized (filesWithMetadataMap) {
+						if (filesWithMetadataMap.containsKey(metadataFilename) ) {
+							Metadata metadata = filesWithMetadataMap.get(metadataFilename);
+							long metadataTimestamp = metadata.getTimestamp();
+							
+							// metadata is older than the new file
+							if (metadataTimestamp < timestamp) {
+								int newVersionNumber = metadata.getVersionInfoNumber() + 1;
+								saveFile(filename, chunkData, chunkNumber, newVersionNumber);
+							} else {
+								System.out.println("No action taken, file sent is older than the previous version.");
+							}
+						}
 					}
 				}
 			}
@@ -452,7 +471,7 @@ public class ChunkServer implements Node {
 					}
 					NodeInformation client = clientRequest.getClientNodeInformation();
 					ChunkServerSendCorruptChunkToController corruptChunkSender = new ChunkServerSendCorruptChunkToController(chunkServerNodeInformation, client, chunknumber, filename, badSlices.size(), badSlices, totalNumberOfChunks);
-					this.chunkServerSender.sendData(corruptChunkSender.getBytes());
+					this.controllerSender.sendData(corruptChunkSender.getBytes());
 				}
 			} catch (FileNotFoundException e) {
 				e.printStackTrace();
@@ -462,13 +481,15 @@ public class ChunkServer implements Node {
 		} else {
 			// chunk has been deleted, need to report it to the controller and get missing chunk
 			System.out.println("Data has been deleted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
-			
-			synchronized (filesWithChunkNumberMap) {
-				filesWithChunkNumberMap.remove(filename);
+			try {
+				synchronized (filesWithChunkNumberMap) {
+					filesWithChunkNumberMap.get(filename).remove(chunknumber);
+				}
+				ChunkServerDeletedChunkToController deletedChunk = new ChunkServerDeletedChunkToController(chunkServerNodeInformation, chunknumber, filename);
+				this.controllerSender.sendData(deletedChunk.getBytes());
+			} catch (IOException e) {
+				e.printStackTrace();
 			}
-			
-			
-			
 		}
 
 		if (DEBUG) { System.out.println("end ChunkServer handleClientRequestToReadFromChunkServer"); }
@@ -514,7 +535,47 @@ public class ChunkServer implements Node {
 				} else {
 					// data has been messed with in some way
 					System.out.println("Data has been corrupted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
-					sendCorruptDataReportToConroller();
+					
+					String[] storedChecksumEntries = storedChecksum.split("\n");
+					String[] tempChecksumEntries = tempMetadata.getChecksum().split("\n");
+					
+					int storedChecksumEntriesLength = storedChecksumEntries.length;
+					int tempChecksumEntriesLength = tempChecksumEntries.length;
+					
+					System.out.println("Stored Checksum Length: " + storedChecksumEntriesLength);
+					System.out.println("Temp Checksum Length: " + tempChecksumEntriesLength);
+					
+					ArrayList<Integer> badSlices = new ArrayList<Integer>();
+					
+					// local metadata had a slice added to it or possibly modified one line
+					if (storedChecksumEntriesLength >= tempChecksumEntriesLength) {
+						int i;
+						// loop through the entries that are there to find corrupt slices
+						for (i = 0; i < tempChecksumEntriesLength; i++) {
+							if (!storedChecksumEntries[i].equals(tempChecksumEntries[i])) {
+								badSlices.add(i);
+							}
+						}
+						// add all extra slices that were added as needing to be fixed
+						for (int j = i; j < storedChecksumEntriesLength; j++) {
+							badSlices.add(j);
+						}
+						
+					} else {
+						// local metadata had a slice deleted from it, need to find which slice it is
+						for (int i = 0; i < storedChecksumEntriesLength; i++) {
+							if (!storedChecksumEntries[i].equals(tempChecksumEntries[i])) {
+								badSlices.add(i);
+								// once the bad slice has been found, all subsequent lines will be corrupt also and need to simply be replaced
+								for (int j = i; j < tempChecksumEntriesLength; j++) {
+									badSlices.add(j);
+								}
+								break;
+							}
+						}
+					}
+					ChunkServerSendOnlyCorruptChunkToController corruptChunkSender = new ChunkServerSendOnlyCorruptChunkToController(chunkServerNodeInformation, chunknumber, filename, badSlices.size(), badSlices);
+					this.controllerSender.sendData(corruptChunkSender.getBytes());
 				}
 			} catch (FileNotFoundException e) {
 				e.printStackTrace();
@@ -591,16 +652,191 @@ public class ChunkServer implements Node {
 					chunkSender.sendData(fixedChunk.getBytes());
 					
 				} else {
+					// data has been messed with in some way
+					System.out.println("Data has been corrupted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
 					
+					String[] storedChecksumEntries = storedChecksum.split("\n");
+					String[] tempChecksumEntries = tempMetadata.getChecksum().split("\n");
+					
+					int storedChecksumEntriesLength = storedChecksumEntries.length;
+					int tempChecksumEntriesLength = tempChecksumEntries.length;
+					
+					System.out.println("Stored Checksum Length: " + storedChecksumEntriesLength);
+					System.out.println("Temp Checksum Length: " + tempChecksumEntriesLength);
+					
+					ArrayList<Integer> badSlices = new ArrayList<Integer>();
+					
+					// local metadata had a slice added to it or possibly modified one line
+					if (storedChecksumEntriesLength >= tempChecksumEntriesLength) {
+						int i;
+						// loop through the entries that are there to find corrupt slices
+						for (i = 0; i < tempChecksumEntriesLength; i++) {
+							if (!storedChecksumEntries[i].equals(tempChecksumEntries[i])) {
+								badSlices.add(i);
+							}
+						}
+						// add all extra slices that were added as needing to be fixed
+						for (int j = i; j < storedChecksumEntriesLength; j++) {
+							badSlices.add(j);
+						}
+						
+					} else {
+						// local metadata had a slice deleted from it, need to find which slice it is
+						for (int i = 0; i < storedChecksumEntriesLength; i++) {
+							if (!storedChecksumEntries[i].equals(tempChecksumEntries[i])) {
+								badSlices.add(i);
+								// once the bad slice has been found, all subsequent lines will be corrupt also and need to simply be replaced
+								for (int j = i; j < tempChecksumEntriesLength; j++) {
+									badSlices.add(j);
+								}
+								break;
+							}
+						}
+					}
+					ChunkServerSendOnlyCorruptChunkToController corruptChunkSender = new ChunkServerSendOnlyCorruptChunkToController(chunkServerNodeInformation, chunknumber, filename, badSlices.size(), badSlices);
+					this.controllerSender.sendData(corruptChunkSender.getBytes());
 				}
 			} catch (FileNotFoundException e) {
 				e.printStackTrace();
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
+		} else {
+			// chunk has been deleted, need to report it to the controller and get missing chunk
+			System.out.println("Data has been deleted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
+			try {
+				synchronized (filesWithChunkNumberMap) {
+					filesWithChunkNumberMap.get(filename).remove(chunknumber);
+				}
+				ChunkServerDeletedChunkToController deletedChunk = new ChunkServerDeletedChunkToController(chunkServerNodeInformation, chunknumber, filename);
+				this.controllerSender.sendData(deletedChunk.getBytes());
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
 		}
 		
 		if (DEBUG) { System.out.println("end ChunkServer handleControllerForwardFixCorruptChunkToChunkServer"); }
+	}
+	
+	private void handleControllerForwardOnlyFixCorruptChunkToChunkServer(Event event) {
+if (DEBUG) { System.out.println("begin ChunkServer handleControllerForwardOnlyFixCorruptChunkToChunkServer"); }
+		
+	ControllerForwardOnlyFixCorruptChunkToChunkServer fixCorrupt = (ControllerForwardOnlyFixCorruptChunkToChunkServer) event;
+		
+		int chunknumber = fixCorrupt.getChunknumber();
+		String filename = fixCorrupt.getFilename();
+		
+		String filelocation = FILE_LOCATION + filename + "_chunk" + chunknumber;
+		
+		File fileToReturn = new File(filelocation);
+		
+		if (fileToReturn.exists()) {
+			try {
+				RandomAccessFile raf = new RandomAccessFile(fileToReturn, "rw");
+				byte[] tempData = new byte[(int) fileToReturn.length()];
+				raf.read(tempData);
+				
+				Metadata tempMetadata = new Metadata(1);
+				
+				Metadata storedMetadata = filesWithMetadataMap.get(filelocation);
+				String storedChecksum = storedMetadata.getChecksum();
+				
+				tempMetadata.generataSHA1Checksum(tempData, SIZE_OF_SLICE);
+				
+				if (tempMetadata.getChecksum().equals(storedChecksum)) {
+					// success, requested data is same as the one stored on this system
+
+					// find the correct slices to forward that data to the chunk server missing those slices
+					int numberOfBadSlices = fixCorrupt.getNumberOfBadSlices();
+					byte[] fixedSlices = new byte[numberOfBadSlices];
+					
+					ArrayList<Integer> badslices = fixCorrupt.getBadSlices();
+					
+					int index = 0;
+					for (Integer i : badslices) {
+						if (i < tempData.length) {
+							fixedSlices[index] = tempData[i];
+							index ++;
+						}
+					}
+					
+					int numberOfDataStored = tempData.length;
+					
+					long timestamp = fileToReturn.lastModified();
+					
+					ChunkServerFixCorruptChunkToChunkServer fixedChunk = new ChunkServerFixCorruptChunkToChunkServer(fixedSlices, chunknumber, filename, timestamp, numberOfBadSlices, badslices, numberOfDataStored);
+					
+					NodeInformation corruptChunkServer = fixCorrupt.getChunkServer();
+					
+					Socket corruptChunkServerSocket = new Socket(corruptChunkServer.getNodeIPAddress(), corruptChunkServer.getNodePortNumber());
+					TCPSender chunkSender = new TCPSender(corruptChunkServerSocket);
+					chunkSender.sendData(fixedChunk.getBytes());
+					
+				} else {
+					// data has been messed with in some way
+					System.out.println("Data has been corrupted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
+					
+					String[] storedChecksumEntries = storedChecksum.split("\n");
+					String[] tempChecksumEntries = tempMetadata.getChecksum().split("\n");
+					
+					int storedChecksumEntriesLength = storedChecksumEntries.length;
+					int tempChecksumEntriesLength = tempChecksumEntries.length;
+					
+					System.out.println("Stored Checksum Length: " + storedChecksumEntriesLength);
+					System.out.println("Temp Checksum Length: " + tempChecksumEntriesLength);
+					
+					ArrayList<Integer> badSlices = new ArrayList<Integer>();
+					
+					// local metadata had a slice added to it or possibly modified one line
+					if (storedChecksumEntriesLength >= tempChecksumEntriesLength) {
+						int i;
+						// loop through the entries that are there to find corrupt slices
+						for (i = 0; i < tempChecksumEntriesLength; i++) {
+							if (!storedChecksumEntries[i].equals(tempChecksumEntries[i])) {
+								badSlices.add(i);
+							}
+						}
+						// add all extra slices that were added as needing to be fixed
+						for (int j = i; j < storedChecksumEntriesLength; j++) {
+							badSlices.add(j);
+						}
+						
+					} else {
+						// local metadata had a slice deleted from it, need to find which slice it is
+						for (int i = 0; i < storedChecksumEntriesLength; i++) {
+							if (!storedChecksumEntries[i].equals(tempChecksumEntries[i])) {
+								badSlices.add(i);
+								// once the bad slice has been found, all subsequent lines will be corrupt also and need to simply be replaced
+								for (int j = i; j < tempChecksumEntriesLength; j++) {
+									badSlices.add(j);
+								}
+								break;
+							}
+						}
+					}
+					ChunkServerSendOnlyCorruptChunkToController corruptChunkSender = new ChunkServerSendOnlyCorruptChunkToController(chunkServerNodeInformation, chunknumber, filename, badSlices.size(), badSlices);
+					this.controllerSender.sendData(corruptChunkSender.getBytes());
+				}
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		} else {
+			// chunk has been deleted, need to report it to the controller and get missing chunk
+			System.out.println("Data has been deleted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
+			try {
+				synchronized (filesWithChunkNumberMap) {
+					filesWithChunkNumberMap.get(filename).remove(chunknumber);
+				}
+				ChunkServerDeletedChunkToController deletedChunk = new ChunkServerDeletedChunkToController(chunkServerNodeInformation, chunknumber, filename);
+				this.controllerSender.sendData(deletedChunk.getBytes());
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		
+		if (DEBUG) { System.out.println("end ChunkServer handleControllerForwardOnlyFixCorruptChunkToChunkServer"); }
 	}
 	
 	private void handleChunkServerFixCorruptChunkToChunkServer(Event event) {
@@ -649,7 +885,7 @@ public class ChunkServer implements Node {
 				
 				// consider telling the controller here that the data has been healed and that the chunk server can be added back to being ana availbale chunk server
 				ChunkServerNotifyFixSuccessToController fixSuccess = new ChunkServerNotifyFixSuccessToController(chunkServerNodeInformation, chunknumber, filename);
-				this.chunkServerSender.sendData(fixSuccess.getBytes());
+				this.controllerSender.sendData(fixSuccess.getBytes());
 				
 			} catch (FileNotFoundException e) {
 				e.printStackTrace();
@@ -683,8 +919,12 @@ public class ChunkServer implements Node {
 			metadata.generataSHA1Checksum(chunkData, SIZE_OF_SLICE);
 			
 			String metadataFileLocation = path + ".metadata";
-			this.filesWithMetadataMap.put(path, metadata);
-			this.newMetadataList.add(metadata);
+			synchronized (filesWithMetadataMap) {
+				this.filesWithMetadataMap.put(path, metadata);
+			}
+			synchronized (newMetadataList) {
+				this.newMetadataList.add(metadata);
+			}
 			
 			File metadataFile = new File(metadataFileLocation);
 			
@@ -700,9 +940,5 @@ public class ChunkServer implements Node {
 			System.out.println("ChunkServer: Error in saveFile: Writing file failed.");
 			e.printStackTrace();
 		}
-	}
-	
-	private void sendCorruptDataReportToConroller() {
-		
 	}
 }

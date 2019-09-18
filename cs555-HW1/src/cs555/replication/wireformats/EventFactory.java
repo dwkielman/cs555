@@ -98,6 +98,10 @@ public class EventFactory {
 				case Protocol.CHUNKSERVER_NOTIFY_FIX_SUCCESS_TO_CONTROLLER:
 					event = new ChunkServerNotifyFixSuccessToController(marshalledBytes);
 					break;
+				// CHUNKSERVER_SEND_ONLY_CORRUPT_CHUNK_T0_CONTROLLER = 7009
+				case Protocol.CHUNKSERVER_SEND_ONLY_CORRUPT_CHUNK_T0_CONTROLLER:
+					event = new ChunkServerSendOnlyCorruptChunkToController(marshalledBytes);
+					break;
 				// CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8000
 				case Protocol.CLIENT_REGISTER_REQUEST_TO_CONTROLLER:
 					event = new ClientRegisterRequestToController(marshalledBytes);

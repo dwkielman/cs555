@@ -11,6 +11,7 @@ public class TCPControllerHeartbeat implements Runnable {
 
 	private Controller controller;
 	private static final long TIME_TO_SLEEP = 30000;
+	private static final boolean DEBUG = true;
 	
 	public TCPControllerHeartbeat(Controller controller) {
 		this.controller = controller;
@@ -25,6 +26,9 @@ public class TCPControllerHeartbeat implements Runnable {
 				Set<NodeInformation> chunkServersToCheck = this.controller.getLiveChunkServers();
 				
 				if (!chunkServersToCheck.isEmpty()) {
+					
+					if (DEBUG) {System.out.println("Controller probing " + chunkServersToCheck.size() + " number of Chunk Servers."); }
+					
 					for (NodeInformation chunkServer : chunkServersToCheck) {
 						try {
 							Socket socket = new Socket(chunkServer.getNodeIPAddress(), chunkServer.getNodePortNumber());
