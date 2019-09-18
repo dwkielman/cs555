@@ -38,7 +38,7 @@ import cs555.replication.wireformats.Protocol;
 
 public class Client implements Node {
 	
-	private static boolean DEBUG = false;
+	private static boolean DEBUG = true;
 	private NodeInformation controllerNodeInformation;
 	private String localHostIPAddress;
 	private int localHostPortNumber;
@@ -204,7 +204,7 @@ public class Client implements Node {
 			
 			this.clientSender = new TCPSender(controllerSocket);
 			
-			ClientRegisterRequestToController clientRegisterRequest = new ClientRegisterRequestToController(this.controllerNodeInformation.getNodeIPAddress(), this.controllerNodeInformation.getNodePortNumber());
+			ClientRegisterRequestToController clientRegisterRequest = new ClientRegisterRequestToController(clientNodeInformation.getNodeIPAddress(), clientNodeInformation.getNodePortNumber());
 
 			if (DEBUG) { System.out.println("ChunkServer about to send message type: " + clientRegisterRequest.getType()); }
 			
@@ -343,7 +343,7 @@ public class Client implements Node {
 		String filename = chunksReceived.getFilename();
 		int totalNumberOfChunks = chunksReceived.getTotalNumberOfChunks();
 
-		HashMap chunkWithBytes = new HashMap<Integer, byte[]>();
+		HashMap<Integer, byte[]> chunkWithBytes = new HashMap<Integer, byte[]>();
 		chunkWithBytes.put(chunkNumber, chunkData);
 		
 		synchronized (this.receivedChunksMap) {

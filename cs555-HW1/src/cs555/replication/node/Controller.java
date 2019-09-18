@@ -43,7 +43,7 @@ import cs555.replication.wireformats.Protocol;
 
 public class Controller implements Node {
 
-	private static final boolean DEBUG = false;
+	private static final boolean DEBUG = true;
 	private int portNumber;
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
@@ -53,7 +53,8 @@ public class Controller implements Node {
 	private ArrayList<NodeInformation> deadChunkServers;
 	private HashMap<String, HashMap<Integer, ArrayList<NodeInformation>>> filesWithChunksNodeInformationMap;
 	private static final int REPLICATION_LEVEL = 3;
-	public static Controller controller;
+	private static Controller controller;
+	private ArrayList<NodeInformation> tempLiveNodes;
 	
 	private Controller(int portNumber) {
 		this.portNumber = portNumber;
@@ -61,6 +62,7 @@ public class Controller implements Node {
 		this.chunkServerHeartbeatMetadaList = new  HashMap<NodeInformation, HeartbeatMetadata>();
 		this.deadChunkServers = new ArrayList<NodeInformation>();
 		this.filesWithChunksNodeInformationMap = new HashMap<String, HashMap<Integer, ArrayList<NodeInformation>>>();
+		this.tempLiveNodes = new ArrayList<NodeInformation>();
 		
 		try {
 			TCPServerThread controllerServerThread = new TCPServerThread(this.portNumber, this);
@@ -68,13 +70,21 @@ public class Controller implements Node {
 			this.thread = new Thread(this.tCPServerThread);
 			this.thread.start();
 			System.out.println("Controller TCPServerThread running.");
+			startHeartBeat();
 			
-			TCPControllerHeartbeat tCPControllerHeartbeat = new TCPControllerHeartbeat(controller);
-			Thread tCPControllerHeartBeatThread = new Thread(tCPControllerHeartbeat);
-			tCPControllerHeartBeatThread.start();
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
+	}
+	
+	private void startHeartBeat() {
+		TCPControllerHeartbeat tCPControllerHeartbeat = new TCPControllerHeartbeat(this);
+		Thread tCPControllerHeartBeatThread = new Thread(tCPControllerHeartbeat);
+		tCPControllerHeartBeatThread.start();
+	}
+	
+	public int getTestMessage() {
+		return 1;
 	}
 	
 	public Controller() {}
@@ -92,8 +102,22 @@ public class Controller implements Node {
 	}
 	
 	public Set<NodeInformation> getLiveChunkServers() {
+		System.out.println("Getting Live Chunk Servers.");
 		synchronized (chunkServerHeartbeatMetadaList) {
-			return chunkServerHeartbeatMetadaList.keySet();
+			if (!chunkServerHeartbeatMetadaList.isEmpty()) {
+				System.out.println("Heartbeats aren't empty.");
+				return chunkServerHeartbeatMetadaList.keySet();
+			} else {
+				System.out.println("Heartbeats are empty.");
+				return null;
+			}
+			
+		}
+	}
+	
+	public ArrayList<NodeInformation> getTempLiveChunkServers() {
+		synchronized (tempLiveNodes) {
+			return tempLiveNodes;
 		}
 	}
 	
@@ -118,18 +142,19 @@ public class Controller implements Node {
 		
         try{
         	controllerIP = InetAddress.getLocalHost().getHostAddress();
+        	System.out.println("Trying to get controllerIP");
         } catch (UnknownHostException e) {
             System.out.println(e.getMessage());
         }
-
-        System.out.println("Controller is running at IP Address: " + controllerIP + " on Port Number: " + controller.portNumber);
+        
+        System.out.println("Controller is running at IP Address: " + controllerIP + " on Port Number: " + controllerPortNumber);
         controller = new Controller(controllerPortNumber);
 	}
 	
 	@Override
 	public synchronized void onEvent(Event event) {
 		int eventType = event.getType();
-		if (DEBUG) { System.out.println("Event Type " + eventType + " passed to Registry."); }
+		if (DEBUG) { System.out.println("Event Type " + eventType + " passed to Controller."); }
 		switch(eventType) {
 			// CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER = 7000
 			case Protocol.CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER:
@@ -210,6 +235,7 @@ public class Controller implements Node {
 				if (!this.chunkServerNodesMap.containsKey(ni)) {
 					this.chunkServerNodesMap.put(ni, sender);
 					this.chunkServerHeartbeatMetadaList.put(ni, hbm);
+					this.tempLiveNodes.add(ni);
 					System.out.println("Chunk Server Registration request successful. The number of Chunk Servers currently running on the Controller is (" + this.chunkServerNodesMap.size() + ")");
 					status = (byte) 1;
 					message = "Chunk Server Registered";
@@ -597,10 +623,10 @@ public class Controller implements Node {
 		if (DEBUG) { System.out.println("end Controller handleChunkServerSendOnlyCorruptChunkToController"); }
 	}
 	
-	public void updateDeadChunkServers() {
-		synchronized (this.chunkServerHeartbeatMetadaList) {
-			if (!deadChunkServers.isEmpty()) {
-				for (NodeInformation deadChunkServer : deadChunkServers) {
+	public synchronized void updateDeadChunkServers(NodeInformation deadChunkServer) {
+		synchronized (chunkServerHeartbeatMetadaList) {
+			//if (!deadChunkServers.isEmpty()) {
+				//for (NodeInformation deadChunkServer : deadChunkServers) {
 					// find the files that are associated with the dead chunk server
 					
 					synchronized (filesWithChunksNodeInformationMap) {
@@ -631,7 +657,7 @@ public class Controller implements Node {
 									if (newChunkServer != null) {
 										// get another active chunk server to update this node information provided it is not also currently one of our potential dead chunk servers
 										for (NodeInformation ni : chunkServers) {
-											if (!deadChunkServers.contains(ni)) {
+											//if (!deadChunkServers.contains(ni)) {
 												try {
 													NodeInformation activeChunkServer = ni;
 													
@@ -647,7 +673,7 @@ public class Controller implements Node {
 												} catch (IOException e) {
 													e.printStackTrace();
 												}
-											}
+											//}
 										}
 									}
 								}
@@ -658,8 +684,8 @@ public class Controller implements Node {
 					synchronized (chunkServerNodesMap) {
 						this.chunkServerNodesMap.remove(deadChunkServer);
 					}
-				}
-			}
+				//}
+			//}
 		}
 	}
 	

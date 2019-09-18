@@ -42,7 +42,7 @@ import cs555.replication.wireformats.Protocol;
 
 public class ChunkServer implements Node {
 	
-	private static boolean DEBUG = false;
+	private static boolean DEBUG = true;
 	private NodeInformation controllerNodeInformation;
 	private String localHostIPAddress;
 	private int localHostPortNumber;
@@ -57,7 +57,7 @@ public class ChunkServer implements Node {
 	private Thread thread;
 	private TCPSender controllerSender;
 	private static ChunkServer chunkServer;
-	private static NodeInformation chunkServerNodeInformation;
+	private NodeInformation chunkServerNodeInformation;
 	
 	private static final int SIZE_OF_SLICE = 1024 * 8;
 
@@ -124,6 +124,7 @@ public class ChunkServer implements Node {
 		} catch (UnknownHostException uhe) {
 			uhe.printStackTrace();
 		}
+		this.chunkServerNodeInformation = new NodeInformation(this.localHostIPAddress, this.localHostPortNumber);
 		// Once the initialization is complete, chunkServer should send a registration request to the controller.
 		connectToController();
 	}
@@ -136,6 +137,10 @@ public class ChunkServer implements Node {
 			// CONTROLLER_REGISTER_RESPONSE_TO_CHUNKSERVER = 6000
 			case Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CHUNKSERVER:
 				handleChunkServerRegisterResponse(event);	
+				break;
+			// CONTROLLER_HEARTBEAT_TO_CHUNKSERVER = 6004:
+			case Protocol.CONTROLLER_HEARTBEAT_TO_CHUNKSERVER:
+				if (DEBUG) { System.out.println("Heartbeat from Controller."); }
 				break;
 			// CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER = 6005
 			case Protocol.CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER:
@@ -203,8 +208,9 @@ public class ChunkServer implements Node {
 			System.out.println("Invalid argument. Second argument must be a number.");
 			nfe.printStackTrace();
 		}
+		
 		chunkServer = new ChunkServer(controllerIPAddress, controllerPortNumber);
-		chunkServerNodeInformation = new NodeInformation(chunkServer.localHostIPAddress, chunkServer.localHostPortNumber);
+		
 	}
 	
 	private void connectToController() {
@@ -226,7 +232,7 @@ public class ChunkServer implements Node {
 			File file = new File(FILE_LOCATION);
 			long freeSpace = file.getFreeSpace();
 			
-			ChunkServerRegisterRequestToController chunkServerRegisterRequest = new ChunkServerRegisterRequestToController(this.controllerNodeInformation.getNodeIPAddress(), this.controllerNodeInformation.getNodePortNumber(), freeSpace);
+			ChunkServerRegisterRequestToController chunkServerRegisterRequest = new ChunkServerRegisterRequestToController(this.chunkServerNodeInformation.getNodeIPAddress(), this.chunkServerNodeInformation.getNodePortNumber(), freeSpace);
 
 			if (DEBUG) { System.out.println("ChunkServer about to send message type: " + chunkServerRegisterRequest.getType()); }
 			

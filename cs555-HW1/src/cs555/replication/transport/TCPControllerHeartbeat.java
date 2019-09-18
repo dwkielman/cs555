@@ -10,7 +10,8 @@ import cs555.replication.wireformats.ControllerHeartbeatToChunkServer;
 public class TCPControllerHeartbeat implements Runnable {
 
 	private Controller controller;
-	private static final long TIME_TO_SLEEP = 30000;
+	//private static final long TIME_TO_SLEEP = 30000;
+	private static final long TIME_TO_SLEEP = 10000;
 	private static final boolean DEBUG = true;
 	
 	public TCPControllerHeartbeat(Controller controller) {
@@ -24,22 +25,26 @@ public class TCPControllerHeartbeat implements Runnable {
 				Thread.sleep(TIME_TO_SLEEP);
 				
 				Set<NodeInformation> chunkServersToCheck = this.controller.getLiveChunkServers();
-				
-				if (!chunkServersToCheck.isEmpty()) {
-					
-					if (DEBUG) {System.out.println("Controller probing " + chunkServersToCheck.size() + " number of Chunk Servers."); }
-					
-					for (NodeInformation chunkServer : chunkServersToCheck) {
-						try {
-							Socket socket = new Socket(chunkServer.getNodeIPAddress(), chunkServer.getNodePortNumber());
-							
-							ControllerHeartbeatToChunkServer heartbeatToChunkServer = new ControllerHeartbeatToChunkServer();
-							
-							controller.getChunkServerSender(chunkServer).sendData(heartbeatToChunkServer.getBytes());
-						} catch (Exception e) {
-							System.out.println("ERROR: Chunk Server not responding. Adding to dead chunk servers in Controller.");
-							controller.addDeadChunkServer(chunkServer);
+				System.out.println("Controller Heartbeat Running");
+
+				if (chunkServersToCheck != null) {
+					if (!chunkServersToCheck.isEmpty()) {
+						if (DEBUG) {System.out.println("Controller probing " + chunkServersToCheck.size() + " number of Chunk Servers."); }
+						
+						for (NodeInformation chunkServer : chunkServersToCheck) {
+							try {
+								Socket socket = new Socket(chunkServer.getNodeIPAddress(), chunkServer.getNodePortNumber());
+								
+								ControllerHeartbeatToChunkServer heartbeatToChunkServer = new ControllerHeartbeatToChunkServer();
+								
+								controller.getChunkServerSender(chunkServer).sendData(heartbeatToChunkServer.getBytes());
+							} catch (Exception e) {
+								System.out.println("ERROR: Chunk Server not responding. Adding to dead chunk servers in Controller.");
+								controller.updateDeadChunkServers(chunkServer);
+							}
 						}
+					} else {
+						System.out.println("No Chunk Servers Running.");
 					}
 				}
 			} catch (Exception e) {
