@@ -62,6 +62,13 @@ public class EventFactory {
 				case Protocol.CONTROLLER_FORWARD_CORRUPT_CHUNK_TO_CHUNKSERVER:
 					event = new ControllerForwardFixCorruptChunkToChunkServer(marshalledBytes);
 					break;
+				// CONTROLLER_FORWARD_ONLY_CORRUPT_CHUNK_TO_CHUNKSERVER = 6007
+				case Protocol.CONTROLLER_FORWARD_ONLY_CORRUPT_CHUNK_TO_CHUNKSERVER:
+					event = new ControllerForwardOnlyFixCorruptChunkToChunkServer(marshalledBytes);
+				// CONTROLLER_RELEASE_CLIENT = 6008
+				case Protocol.CONTROLLER_RELEASE_CLIENT:
+					event = new ControllerReleaseClient(marshalledBytes);
+					break;
 				// CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER = 7000
 				case Protocol.CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER:
 					event = new ChunkServerRegisterRequestToController(marshalledBytes);

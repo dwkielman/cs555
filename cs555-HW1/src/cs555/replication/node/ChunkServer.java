@@ -51,7 +51,7 @@ public class ChunkServer implements Node {
 	private HashMap<String, ArrayList<Integer>> filesWithChunkNumberMap;
 	private HashMap<String, Metadata> filesWithMetadataMap;
 	private ArrayList<Metadata> newMetadataList;
-	private static final String FILE_LOCATION = "/tmp/data";
+	private static final String FILE_LOCATION = "/tmp/" + System.getProperty("user.dir") + "/data/";
 	private TCPReceiverThread chunkServerTCPReceiverThread;
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
@@ -918,6 +918,9 @@ if (DEBUG) { System.out.println("begin ChunkServer handleControllerForwardOnlyFi
 			FileOutputStream fos = new FileOutputStream(fileToBeSaved);
 			fos.write(chunkData, 0, chunkData.length);
 			
+			System.out.println("Saving file to the following location: " + fileToBeSaved.getAbsolutePath());
+			
+			
 			// generate metadata to write for saving in a different file
 			Metadata metadata = new Metadata(versionNumber);
 			
@@ -936,6 +939,8 @@ if (DEBUG) { System.out.println("begin ChunkServer handleControllerForwardOnlyFi
 			
 			byte[] metadataByteToWrite = metadata.generateMetadataBytesToWrite(chunkData);
 			FileOutputStream metadataFos = new FileOutputStream(metadataFile);
+			
+			System.out.println("Saving metadata to the following location: " + metadataFile.getAbsolutePath());
 			
 			metadataFos.write(metadataByteToWrite, 0, metadataByteToWrite.length);
 			

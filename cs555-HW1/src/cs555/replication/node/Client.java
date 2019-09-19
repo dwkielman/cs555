@@ -9,6 +9,8 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -27,6 +29,7 @@ import cs555.replication.wireformats.ClientSendChunkToChunkServer;
 import cs555.replication.wireformats.ControllerChunkServerToReadResponseToClient;
 import cs555.replication.wireformats.ControllerChunkServersResponseToClient;
 import cs555.replication.wireformats.ControllerRegisterResponseToClient;
+import cs555.replication.wireformats.ControllerReleaseClient;
 import cs555.replication.wireformats.Event;
 import cs555.replication.wireformats.Protocol;
 
@@ -90,9 +93,14 @@ public class Client implements Node {
 			// CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT = 6002
 			case Protocol.CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT:
 				handleControllerChunkServersResponse(event);
+				break;
 			// CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT = 6003
 			case Protocol.CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT:
 				handleControllerChunkServerToReadResponseToClient(event);
+				break;
+			// CONTROLLER_RELEASE_CLIENT = 6008
+			case Protocol.CONTROLLER_RELEASE_CLIENT:
+				handleControllerReleaseClient(event);
 				break;
 			// CHUNKSERVER_SEND_CHUNK_TO_CLIENT = 7002
 			case Protocol.CHUNKSERVER_SEND_CHUNK_TO_CLIENT:
@@ -167,13 +175,13 @@ public class Client implements Node {
 							client.fileIntoChunks = splitFileIntoBytes(file, chunkNumber);
 							client.sendClientChunkServerRequestToController(filename, chunkNumber, timestamp);
 						} else {
-							System.out.println("Command unrecognized. Please enter a valid input.");
+							System.out.println("File does not exist. Please try again.");
 						}
 	            		break;
 	            	case "R":
 	            		if (DEBUG) { System.out.println("User selected Read a file."); }
 	            		String filenameToRead;
-	            		System.out.println("Enter the name of the file that you wish to store: ");
+	            		System.out.println("Enter the name of the file that you wish to read: ");
 	            		filenameToRead = scan.nextLine();
 	            		client.accessUserInput = false;
 	            		client.sendClientReadFileRequestToController(filenameToRead, 0);
@@ -182,6 +190,25 @@ public class Client implements Node {
 	            		if (DEBUG) { System.out.println("User selected Quit."); }
 	            		System.out.println("Quitting program. Goodbye.");
 	            		System.exit(1);
+	            	case "T":
+	            		if (DEBUG) { System.out.println("Testing features. Testing reading a file first. Enter file name:"); }
+	            		
+	            		String currentDirectory = System.getProperty("user.dir");
+	            	    System.out.println("The current working directory is " + currentDirectory);
+	            	    String currentUser = System.getProperty("user.name");
+	            	    System.out.println("The current user on this system is " + currentUser);
+	            	    
+	            		String filename2;
+	            		System.out.println("Enter the name of the file that you wish to store: ");
+						filename2 = scan.nextLine();
+						Path path = Paths.get(String.format("./%s", filename2));
+						File file2 = path.toFile();
+						if (file2.exists()) {
+							System.out.println("File Found. Good job Daniel.");
+						} else {
+							System.out.println("File does not exist. Please try again.");
+						}
+	            		break;
 	            	default:
 	            		System.out.println("Command unrecognized. Please enter a valid input.");
 	            }
@@ -287,9 +314,10 @@ public class Client implements Node {
 					chunkSender.sendData(chunksToChunkServer.getBytes());
 					
 					// last chunk was just sent, clear everything and reset for input
-					if (chunkNumber == fileIntoChunks.size()) {
-						this.accessUserInput = true;
+					if (chunkNumber == fileIntoChunks.size() - 1) {
 						fileIntoChunks = new ArrayList<byte[]>();
+						this.accessUserInput = true;
+						System.out.println("All done dividing and sending chunks.");
 					// not the last chunk, need to prep the next chunk and request more chunk servers from the controller
 					} else {
 						chunkNumber++;
@@ -362,6 +390,18 @@ public class Client implements Node {
 		if (DEBUG) { System.out.println("end Client ChunkServerSendChunkToClient"); }
 	}
 	
+	private void handleControllerReleaseClient(Event event) {
+		if (DEBUG) { System.out.println("begin Client handleControllerReleaseClient"); }
+		
+		ControllerReleaseClient release = (ControllerReleaseClient) event;
+		this.accessUserInput = release.getAccess(); 
+		if (DEBUG) { System.out.println("Access User Input is: " + this.accessUserInput); }
+		
+		System.out.println();
+		
+		if (DEBUG) { System.out.println("end Client handleControllerReleaseClient"); }
+	}
+	
 	private static ArrayList<byte[]> splitFileIntoBytes(File file, int chunkNumber) {
 		ArrayList<byte[]> filesAsBytesList = new ArrayList<byte[]>();
 		
@@ -372,7 +412,7 @@ public class Client implements Node {
 			BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file));
 			int fileLength = 0;
 			
-			while ((fileLength = bis.read(chunkSizeBytes)) > -1) {
+			while ((fileLength = bis.read(chunkSizeBytes)) > 0) {
 				chunkSizeBytes = Arrays.copyOf(chunkSizeBytes, fileLength);
 				
 				// add the bytes to the ArrayList that holds all of the bytes for the file
@@ -388,8 +428,7 @@ public class Client implements Node {
 	}
 	
 	private void mergeFile(String filename) {
-		String path = "/tmp/received";
-		
+		String path = "/tmp/" + System.getProperty("user.dir") + "/received/";
 		File pathFile = new File(path);
 		if (!pathFile.exists()) {
 			pathFile.mkdir();
@@ -414,9 +453,12 @@ public class Client implements Node {
 				fos.write(data);
 			}
 			
+			System.out.println("File has been saved to the following location: " + pathFile.getAbsolutePath());
+			
 			// remove the file from the map, no longer building it
 			this.receivedChunksMap.remove(filename);
-			accessUserInput = true;
+			this.accessUserInput = true;
+			System.out.println("Finished merging file: " + filename);
 			
 		} catch (IOException e) {
 			e.printStackTrace();

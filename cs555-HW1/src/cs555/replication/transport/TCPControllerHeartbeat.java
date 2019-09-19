@@ -25,7 +25,7 @@ public class TCPControllerHeartbeat implements Runnable {
 				Thread.sleep(TIME_TO_SLEEP);
 				
 				Set<NodeInformation> chunkServersToCheck = this.controller.getLiveChunkServers();
-				System.out.println("Controller Heartbeat Running");
+				//System.out.println("Controller Heartbeat Running");
 
 				if (chunkServersToCheck != null) {
 					if (!chunkServersToCheck.isEmpty()) {

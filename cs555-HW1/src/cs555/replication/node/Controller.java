@@ -32,6 +32,7 @@ import cs555.replication.wireformats.ControllerForwardFixCorruptChunkToChunkServ
 import cs555.replication.wireformats.ControllerForwardOnlyFixCorruptChunkToChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToClient;
+import cs555.replication.wireformats.ControllerReleaseClient;
 import cs555.replication.wireformats.Event;
 import cs555.replication.wireformats.Protocol;
 
@@ -59,6 +60,7 @@ public class Controller implements Node {
 	private Controller(int portNumber) {
 		this.portNumber = portNumber;
 		this.chunkServerNodesMap = new HashMap<NodeInformation, TCPSender>();
+		this.clientNodesMap = new HashMap<NodeInformation, TCPSender>();
 		this.chunkServerHeartbeatMetadaList = new  HashMap<NodeInformation, HeartbeatMetadata>();
 		this.deadChunkServers = new ArrayList<NodeInformation>();
 		this.filesWithChunksNodeInformationMap = new HashMap<String, HashMap<Integer, ArrayList<NodeInformation>>>();
@@ -360,9 +362,20 @@ public class Controller implements Node {
 				} catch  (IOException ioe) {
 					ioe.printStackTrace();
 				}
+			} else {
+				System.out.println("Not Enough Chunk Servers to store the file on the system. Please try again at a laster time.");
+				
+				ControllerReleaseClient releaseClient = new ControllerReleaseClient(true);
+				TCPSender sender = clientNodesMap.get(clientNode);
+				try {
+					sender.sendData(releaseClient.getBytes());
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
 			}
 			// clean up, add to the relevant collections and be sure to update the free space available on the chunk servers that are being used
 		//}
+		if (DEBUG) { System.out.println("end Controller handleClientChunkServerRequest"); }
 	}
 	
 	private void handleClientReadRequest(Event event) {
