@@ -14,7 +14,7 @@ public class TCPHeartbeat implements Runnable {
 	private NodeInformation chunkServerNodeInformation;
 	private static final long TIME_TO_SLEEP = 30000;
 	private int numberOfMinorsToSend;
-	private static final boolean DEBUG = true;
+	private static final boolean DEBUG = false;
 	
 	public TCPHeartbeat(ChunkServer chunkServer, NodeInformation chunkServerNodeInformation) {
 		this.chunkServer = chunkServer;

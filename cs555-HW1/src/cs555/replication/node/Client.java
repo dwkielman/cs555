@@ -49,10 +49,11 @@ public class Client implements Node {
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
 	private TCPSender controllerSender;
-	private boolean accessUserInput;
+	//private boolean accessUserInput;
 	private ArrayList<byte[]> fileIntoChunks;
 	private NodeInformation clientNodeInformation;
 	private HashMap<String, HashMap<Integer, byte[]>> receivedChunksMap;
+	private static Client client;
 	
 	private static final int SIZE_OF_CHUNK = 1024 * 64;
 	
@@ -64,7 +65,7 @@ public class Client implements Node {
 			this.tCPServerThread = serverThread;
 			this.thread = new Thread(this.tCPServerThread);
 			this.thread.start();
-			this.accessUserInput = true;
+			//this.accessUserInput = true;
 			this.fileIntoChunks = new ArrayList<byte[]>();
 			this.receivedChunksMap = new HashMap<String, HashMap<Integer, byte[]>>();
 			
@@ -147,16 +148,16 @@ public class Client implements Node {
 		
 		Client client = new Client(controllerIPAddress, controllerPortNumber);
 		
-		handleUserInput(client);
+		client.handleUserInput();
 	}
 	
-	private static void handleUserInput(Client client) {
+	private void handleUserInput() {
 		Scanner scan = new Scanner(System.in);
 		
 		System.out.println("Ready for input.");
 			
         while(true) {
-        	if (client.accessUserInput) {
+        	//if (this.accessUserInput) {
 	            System.out.println("Options:\n[S] Store a File\n[R] Read a File\n[Q] Quit\nPlease type your request: ");
 	            String input = scan.nextLine();
 	            
@@ -169,11 +170,11 @@ public class Client implements Node {
 						filename = scan.nextLine();
 						File file = new File(filename);
 						if (file.exists()) {
-							client.accessUserInput = false;
+							//this.accessUserInput = false;
 							int chunkNumber = 0;
 							long timestamp = file.lastModified();
-							client.fileIntoChunks = splitFileIntoBytes(file, chunkNumber);
-							client.sendClientChunkServerRequestToController(filename, chunkNumber, timestamp);
+							this.fileIntoChunks = splitFileIntoBytes(file, chunkNumber);
+							sendClientChunkServerRequestToController(filename, chunkNumber, timestamp);
 						} else {
 							System.out.println("File does not exist. Please try again.");
 						}
@@ -183,8 +184,8 @@ public class Client implements Node {
 	            		String filenameToRead;
 	            		System.out.println("Enter the name of the file that you wish to read: ");
 	            		filenameToRead = scan.nextLine();
-	            		client.accessUserInput = false;
-	            		client.sendClientReadFileRequestToController(filenameToRead, 0);
+	            		//this.accessUserInput = false;
+	            		sendClientReadFileRequestToController(filenameToRead, 0);
 	            		break;
 	            	case "Q":
 	            		if (DEBUG) { System.out.println("User selected Quit."); }
@@ -197,6 +198,10 @@ public class Client implements Node {
 	            	    System.out.println("The current working directory is " + currentDirectory);
 	            	    String currentUser = System.getProperty("user.name");
 	            	    System.out.println("The current user on this system is " + currentUser);
+	            	    
+	            	    long space = new File(currentDirectory).getFreeSpace();
+	            	    
+	            	    System.out.println("The space available on this comptuer is: " + space);
 	            	    
 	            		String filename2;
 	            		System.out.println("Enter the name of the file that you wish to store: ");
@@ -212,7 +217,7 @@ public class Client implements Node {
 	            	default:
 	            		System.out.println("Command unrecognized. Please enter a valid input.");
 	            }
-        	}
+        	//}
         }
 	}
 	
@@ -232,7 +237,7 @@ public class Client implements Node {
 			
 			this.controllerSender = new TCPSender(controllerSocket);
 			
-			ClientRegisterRequestToController clientRegisterRequest = new ClientRegisterRequestToController(clientNodeInformation.getNodeIPAddress(), clientNodeInformation.getNodePortNumber());
+			ClientRegisterRequestToController clientRegisterRequest = new ClientRegisterRequestToController(this.clientNodeInformation.getNodeIPAddress(), this.clientNodeInformation.getNodePortNumber());
 
 			if (DEBUG) { System.out.println("ChunkServer about to send message type: " + clientRegisterRequest.getType()); }
 			
@@ -266,7 +271,7 @@ public class Client implements Node {
 		if (DEBUG) { System.out.println("begin Client sendClientChunkServerRequestToController"); }
 		
 		try {
-			ClientChunkServerRequestToController chunkServersRequest = new ClientChunkServerRequestToController(clientNodeInformation, chunkNumber, filename, timestamp);
+			ClientChunkServerRequestToController chunkServersRequest = new ClientChunkServerRequestToController(this.clientNodeInformation, chunkNumber, filename, timestamp);
 			this.controllerSender.sendData(chunkServersRequest.getBytes());
 
 		} catch (IOException ioe) {
@@ -280,7 +285,10 @@ public class Client implements Node {
 		if (DEBUG) { System.out.println("begin Client sendClientReadFileRequestToController"); }
 		
 		try {
-			ClientReadFileRequestToController readRequest = new ClientReadFileRequestToController(clientNodeInformation, filename, chunkNumber);
+			ClientReadFileRequestToController readRequest = new ClientReadFileRequestToController(this.clientNodeInformation, filename, chunkNumber);
+			
+			System.out.println("Telling the Controller to send the file to: " + this.clientNodeInformation.getNodeIPAddress());
+			
 			this.controllerSender.sendData(readRequest.getBytes());
 			
 		} catch (IOException ioe) {
@@ -294,7 +302,7 @@ public class Client implements Node {
 	private void handleControllerChunkServersResponse(Event event) {
 		if (DEBUG) { System.out.println("begin Client handleControllerChunkServersResponse"); }
 		ControllerChunkServersResponseToClient clientChunkServersFromController = (ControllerChunkServersResponseToClient) event;
-		if (DEBUG) { System.out.println("MessagingNode got a message type: " + clientChunkServersFromController.getType()); }
+		if (DEBUG) { System.out.println("Client got a message type: " + clientChunkServersFromController.getType()); }
 		
 		ArrayList<NodeInformation> chunkServersNodeInfoList = clientChunkServersFromController.getChunkServersNodeInfoList();
 		int chunkNumber = clientChunkServersFromController.getChunkNumber();
@@ -304,8 +312,8 @@ public class Client implements Node {
 		if (!chunkServersNodeInfoList.isEmpty()) {
 			NodeInformation firstChunkServer = chunkServersNodeInfoList.remove(0);
 			
-			if (!fileIntoChunks.isEmpty()) {
-				byte[] chunksToSend = fileIntoChunks.get(chunkNumber);
+			if (!this.fileIntoChunks.isEmpty()) {
+				byte[] chunksToSend = this.fileIntoChunks.get(chunkNumber);
 				try {
 					Socket chunkServer = new Socket(firstChunkServer.getNodeIPAddress(), firstChunkServer.getNodePortNumber());
 
@@ -315,8 +323,9 @@ public class Client implements Node {
 					
 					// last chunk was just sent, clear everything and reset for input
 					if (chunkNumber == fileIntoChunks.size() - 1) {
-						fileIntoChunks = new ArrayList<byte[]>();
-						this.accessUserInput = true;
+						this.fileIntoChunks = new ArrayList<byte[]>();
+						//this.accessUserInput = true;
+						//handleUserInput();
 						System.out.println("All done dividing and sending chunks.");
 					// not the last chunk, need to prep the next chunk and request more chunk servers from the controller
 					} else {
@@ -350,7 +359,7 @@ public class Client implements Node {
 			// send a request to the chunkserver for the chunk that we have gotten
 			Socket chunkServer = new Socket(chunkServerNodeInformation.getNodeIPAddress(), chunkServerNodeInformation.getNodePortNumber());
 			
-			ClientRequestToReadFromChunkServer requestToReadFromChunkServer = new ClientRequestToReadFromChunkServer(clientNodeInformation, chunkNumber, filename, totalNumberOfChunks);
+			ClientRequestToReadFromChunkServer requestToReadFromChunkServer = new ClientRequestToReadFromChunkServer(this.clientNodeInformation, chunkNumber, filename, totalNumberOfChunks);
 			
 			TCPSender chunkSender = new TCPSender(chunkServer);
 			chunkSender.sendData(requestToReadFromChunkServer.getBytes());
@@ -373,10 +382,22 @@ public class Client implements Node {
 		int totalNumberOfChunks = chunksReceived.getTotalNumberOfChunks();
 
 		HashMap<Integer, byte[]> chunkWithBytes = new HashMap<Integer, byte[]>();
-		chunkWithBytes.put(chunkNumber, chunkData);
+
+		System.out.println("Storing Filename: " + filename + " with chunk number: " + chunkNumber);
 		
 		synchronized (this.receivedChunksMap) {
-			this.receivedChunksMap.put(filename, chunkWithBytes);
+			
+			if (!this.receivedChunksMap.containsKey(filename)) {
+				chunkWithBytes.put(chunkNumber, chunkData);
+				this.receivedChunksMap.put(filename, chunkWithBytes);
+			} else {
+				HashMap<Integer, byte[]> tempChunkWithBytes = this.receivedChunksMap.get(filename);
+				tempChunkWithBytes.put(chunkNumber, chunkData);
+				this.receivedChunksMap.put(filename, tempChunkWithBytes);
+			}
+
+			System.out.println("The size of receivedChunksMap for this file is: " + this.receivedChunksMap.get(filename).size());
+			System.out.println("Total number of chunks expecting: " + totalNumberOfChunks);
 			if (this.receivedChunksMap.get(filename).size() == totalNumberOfChunks) {
 				// file is complete, put together and build
 				mergeFile(filename);
@@ -394,8 +415,8 @@ public class Client implements Node {
 		if (DEBUG) { System.out.println("begin Client handleControllerReleaseClient"); }
 		
 		ControllerReleaseClient release = (ControllerReleaseClient) event;
-		this.accessUserInput = release.getAccess(); 
-		if (DEBUG) { System.out.println("Access User Input is: " + this.accessUserInput); }
+		//this.accessUserInput = release.getAccess(); 
+		//if (DEBUG) { System.out.println("Access User Input is: " + this.accessUserInput); }
 		
 		System.out.println();
 		
@@ -428,7 +449,7 @@ public class Client implements Node {
 	}
 	
 	private void mergeFile(String filename) {
-		String path = "/tmp/" + System.getProperty("user.dir") + "/received/";
+		String path = System.getProperty("user.dir") + "/tmp/received/";
 		File pathFile = new File(path);
 		if (!pathFile.exists()) {
 			pathFile.mkdir();
@@ -457,9 +478,9 @@ public class Client implements Node {
 			
 			// remove the file from the map, no longer building it
 			this.receivedChunksMap.remove(filename);
-			this.accessUserInput = true;
+			//this.accessUserInput = true;
+			//handleUserInput();
 			System.out.println("Finished merging file: " + filename);
-			
 		} catch (IOException e) {
 			e.printStackTrace();
 		}

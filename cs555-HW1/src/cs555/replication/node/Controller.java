@@ -316,6 +316,14 @@ public class Controller implements Node {
 					}
 					tempHbmList.sort((h1, h2) -> Long.compare(h2.getFreeSpaceAvailable(), h1.getFreeSpaceAvailable()));
 
+					if (DEBUG)
+					{
+						System.out.println("The file storage and respective chunk servers are: ");
+						for (HeartbeatMetadata h : tempHbmList) {
+							System.out.println(h.getNodeInformation().getNodeIPAddress() + " with space: " + h.getFreeSpaceAvailable());
+						}
+						
+					}
 					// get the 3 chunk servers with the most space
 					ArrayList<HeartbeatMetadata> hbArrayList = tempHbmList.stream().limit(REPLICATION_LEVEL).collect(Collectors.toCollection(ArrayList::new));
 					
@@ -330,6 +338,11 @@ public class Controller implements Node {
 					synchronized (filesWithChunksNodeInformationMap) {
 						if (filesWithChunksNodeInformationMap.containsKey(filename)) {	
 							filesWithChunksNodeInformationMap.get(filename).put(chunkNumber, chunkServers);
+							System.out.println("Filenames and chunks with respective chunk servers are: ");
+							for (String s : filesWithChunksNodeInformationMap.keySet()) {
+								System.out.println("Filename: " + s);
+								System.out.println("Chunk Number / Chunk Server: " + filesWithChunksNodeInformationMap.get(s));
+							}
 						} else {
 							HashMap<Integer, ArrayList<NodeInformation>> tempMap = new HashMap<Integer, ArrayList<NodeInformation>>();
 							tempMap.put(chunkNumber, chunkServers);
@@ -393,15 +406,34 @@ public class Controller implements Node {
 				if (filesWithChunksNodeInformationMap.containsKey(filename)) {
 					// get the metadata for the chunkservers that hold the first value of the file
 					// get the chunk servers associated with the file
-					ArrayList<NodeInformation> chunkServers = filesWithChunksNodeInformationMap.get(filename).get(chunkNumber);
+					ArrayList<NodeInformation> chunkServers = new ArrayList<NodeInformation>();
+					
+					System.out.println("Attempting to get " + filename + " with Chunk " + chunkNumber + "From chunk server in the map."); 
+					
+					chunkServers = filesWithChunksNodeInformationMap.get(filename).get(chunkNumber);
 					int totalNumberOfFiles = filesWithChunksNodeInformationMap.get(filename).size();
+					
+					System.out.println("Total Number of Files: " + totalNumberOfFiles);
 					
 					//ArrayList<HeartbeatMetadata> HeartbeatMetadataList = filesOnChunkServersMap.get(filename).get(chunkNumber);
 					
 					// get the first chunk server stored and try that one
 					if (!chunkServers.isEmpty()) {
 						ControllerChunkServerToReadResponseToClient controllerReponse = new ControllerChunkServerToReadResponseToClient(chunkServers.get(0), chunkNumber, filename, totalNumberOfFiles);
-						this.clientNodesMap.get(clientNode).sendData(controllerReponse.getBytes());
+						
+						System.out.println("About to send a Client Read Request (Read Request type: " + controllerReponse.getType()  + ") to: " + clientNode.getNodeIPAddress());
+						if (clientNodesMap.containsKey(clientNode)) {
+							TCPSender sender = clientNodesMap.get(clientNode);
+
+							System.out.println("Sending now.");
+							sender.sendData(controllerReponse.getBytes());
+						} else {
+							System.out.println("Can't find Client node to send to.");
+						}
+						
+
+						
+						//this.clientNodesMap.get(clientNode).sendData(controllerReponse.getBytes());
 					} else {
 						System.out.println("No ChunkServers available to read the file from.");
 					
@@ -433,7 +465,7 @@ public class Controller implements Node {
 	}
 	
 	private void handleChunkServerSendMajorHeartbeatToController(Event event) {
-		if (DEBUG) { System.out.println("begin Controller handleChunkServerSendMajorHeartbeatToController"); }
+		//if (DEBUG) { System.out.println("begin Controller handleChunkServerSendMajorHeartbeatToController"); }
 		
 		ChunkServerSendMajorHeartbeatToController majorHeartbeat = (ChunkServerSendMajorHeartbeatToController) event;
 		
@@ -449,11 +481,11 @@ public class Controller implements Node {
 			chunkServerHeartbeatMetadaList.put(chunkServer, hbm);
 		}
 		
-		if (DEBUG) { System.out.println("end Controller handleChunkServerSendMajorHeartbeatToController"); }
+		//if (DEBUG) { System.out.println("end Controller handleChunkServerSendMajorHeartbeatToController"); }
 	}
 	
 	private void handleChunkServerSendMinorHeartbeatToController(Event event) {
-		if (DEBUG) { System.out.println("begin Controller handleChunkServerSendMinorHeartbeatToController"); }
+		//if (DEBUG) { System.out.println("begin Controller handleChunkServerSendMinorHeartbeatToController"); }
 		
 		ChunkServerSendMinorHeartbeatToController minorHeartbeat = (ChunkServerSendMinorHeartbeatToController) event;
 		
@@ -476,7 +508,7 @@ public class Controller implements Node {
 			chunkServerHeartbeatMetadaList.put(chunkServer, hbm);
 		}
 		
-		if (DEBUG) { System.out.println("end Controller handleChunkServerSendMinorHeartbeatToController"); }
+		//if (DEBUG) { System.out.println("end Controller handleChunkServerSendMinorHeartbeatToController"); }
 	}
 	
 	private void handleChunkServerDeletedChunkToController(Event event) {

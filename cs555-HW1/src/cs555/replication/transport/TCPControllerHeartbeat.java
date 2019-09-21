@@ -12,7 +12,7 @@ public class TCPControllerHeartbeat implements Runnable {
 	private Controller controller;
 	//private static final long TIME_TO_SLEEP = 30000;
 	private static final long TIME_TO_SLEEP = 10000;
-	private static final boolean DEBUG = true;
+	private static final boolean DEBUG = false;
 	
 	public TCPControllerHeartbeat(Controller controller) {
 		this.controller = controller;

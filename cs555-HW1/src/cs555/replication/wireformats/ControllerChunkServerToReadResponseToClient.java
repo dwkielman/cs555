@@ -90,7 +90,7 @@ public class ControllerChunkServerToReadResponseToClient implements Event {
 		dout.write(nodeInformationBytes);
 		
 		// chunkNumber
-		dout.writeInt(chunkNumber);
+		dout.writeInt(this.chunkNumber);
 		
 		// Filename
 		byte[] fileNameBytes = this.fileName.getBytes();

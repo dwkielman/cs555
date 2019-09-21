@@ -51,7 +51,10 @@ public class ChunkServer implements Node {
 	private HashMap<String, ArrayList<Integer>> filesWithChunkNumberMap;
 	private HashMap<String, Metadata> filesWithMetadataMap;
 	private ArrayList<Metadata> newMetadataList;
-	private static final String FILE_LOCATION = "/tmp/" + System.getProperty("user.dir") + "/data/";
+	private static final String FILE_SPACE_LOCATION = System.getProperty("user.dir");
+	private static final String FILE_LOCATION = System.getProperty("user.dir") + "/tmp/data/";
+	private String tempFileLocationReplacement;
+	private String localFilePath;
 	private TCPReceiverThread chunkServerTCPReceiverThread;
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
@@ -87,7 +90,7 @@ public class ChunkServer implements Node {
 	}
 	
 	public long getFreeSpaceAvailable() {
-		return new File(FILE_LOCATION).getFreeSpace();
+		return new File(FILE_SPACE_LOCATION).getFreeSpace();
 	}
 	
 	public int getNumberOfChunksStored() {
@@ -119,6 +122,8 @@ public class ChunkServer implements Node {
 			if (DEBUG) { System.out.println("My server port number is: " + this.localHostPortNumber); }
 			
 			this.localHostIPAddress = InetAddress.getLocalHost().getCanonicalHostName();
+			this.localFilePath = "/" + InetAddress.getLocalHost().getHostName() + "/tmp/data/";
+			this.tempFileLocationReplacement = FILE_LOCATION + this.localFilePath;
 			
 			if (DEBUG) { System.out.println("My host IP Address is: " + this.localHostIPAddress); }
 		} catch (UnknownHostException uhe) {
@@ -140,7 +145,7 @@ public class ChunkServer implements Node {
 				break;
 			// CONTROLLER_HEARTBEAT_TO_CHUNKSERVER = 6004:
 			case Protocol.CONTROLLER_HEARTBEAT_TO_CHUNKSERVER:
-				if (DEBUG) { System.out.println("Heartbeat from Controller."); }
+				//if (DEBUG) { System.out.println("Heartbeat from Controller."); }
 				break;
 			// CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER = 6005
 			case Protocol.CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER:
@@ -229,7 +234,7 @@ public class ChunkServer implements Node {
 			
 			this.controllerSender = new TCPSender(controllerSocket);
 			
-			File file = new File(FILE_LOCATION);
+			File file = new File(FILE_SPACE_LOCATION);
 			long freeSpace = file.getFreeSpace();
 			
 			ChunkServerRegisterRequestToController chunkServerRegisterRequest = new ChunkServerRegisterRequestToController(this.chunkServerNodeInformation.getNodeIPAddress(), this.chunkServerNodeInformation.getNodePortNumber(), freeSpace);
@@ -257,7 +262,7 @@ public class ChunkServer implements Node {
 			TCPHeartbeat tCPHeartbeat = new TCPHeartbeat(chunkServer, chunkServerNodeInformation);
 			Thread tCPHeartBeatThread = new Thread(tCPHeartbeat);
 			tCPHeartBeatThread.start();
-			
+
 		// unsuccessful registration
 		} else {
 			System.out.println("Registration Request Failed. Exiting.");
@@ -404,7 +409,7 @@ public class ChunkServer implements Node {
 		int chunknumber = clientRequest.getChunkNumber();
 		int totalNumberOfChunks = clientRequest.getTotalNumberOfChunks();
 		
-		String filelocation = FILE_LOCATION + filename + "_chunk" + chunknumber;
+		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
 		
 		File fileToReturn = new File(filelocation);
 		
@@ -414,7 +419,7 @@ public class ChunkServer implements Node {
 				byte[] tempData = new byte[(int) fileToReturn.length()];
 				raf.read(tempData);
 				
-				Metadata tempMetadata = new Metadata(1);
+				Metadata tempMetadata = new Metadata(1, chunknumber);
 				
 				Metadata storedMetadata = filesWithMetadataMap.get(filelocation);
 				String storedChecksum = storedMetadata.getChecksum();
@@ -508,7 +513,7 @@ public class ChunkServer implements Node {
 		int chunknumber = forwardData.getChunkNumber();
 		String filename = forwardData.getFilename();
 		
-		String filelocation = FILE_LOCATION + filename + "_chunk" + chunknumber;
+		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
 		
 		File fileToReturn = new File(filelocation);
 		
@@ -518,7 +523,7 @@ public class ChunkServer implements Node {
 				byte[] tempData = new byte[(int) fileToReturn.length()];
 				raf.read(tempData);
 				
-				Metadata tempMetadata = new Metadata(1);
+				Metadata tempMetadata = new Metadata(1, chunknumber);
 				
 				Metadata storedMetadata = filesWithMetadataMap.get(filelocation);
 				String storedChecksum = storedMetadata.getChecksum();
@@ -600,7 +605,7 @@ public class ChunkServer implements Node {
 		int chunknumber = fixCorrupt.getChunknumber();
 		String filename = fixCorrupt.getFilename();
 		
-		String filelocation = FILE_LOCATION + filename + "_chunk" + chunknumber;
+		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
 		
 		File fileToReturn = new File(filelocation);
 		
@@ -610,7 +615,7 @@ public class ChunkServer implements Node {
 				byte[] tempData = new byte[(int) fileToReturn.length()];
 				raf.read(tempData);
 				
-				Metadata tempMetadata = new Metadata(1);
+				Metadata tempMetadata = new Metadata(1, chunknumber);
 				
 				Metadata storedMetadata = filesWithMetadataMap.get(filelocation);
 				String storedChecksum = storedMetadata.getChecksum();
@@ -725,14 +730,14 @@ public class ChunkServer implements Node {
 	}
 	
 	private void handleControllerForwardOnlyFixCorruptChunkToChunkServer(Event event) {
-if (DEBUG) { System.out.println("begin ChunkServer handleControllerForwardOnlyFixCorruptChunkToChunkServer"); }
+		if (DEBUG) { System.out.println("begin ChunkServer handleControllerForwardOnlyFixCorruptChunkToChunkServer"); }
 		
 	ControllerForwardOnlyFixCorruptChunkToChunkServer fixCorrupt = (ControllerForwardOnlyFixCorruptChunkToChunkServer) event;
 		
 		int chunknumber = fixCorrupt.getChunknumber();
 		String filename = fixCorrupt.getFilename();
 		
-		String filelocation = FILE_LOCATION + filename + "_chunk" + chunknumber;
+		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
 		
 		File fileToReturn = new File(filelocation);
 		
@@ -742,7 +747,7 @@ if (DEBUG) { System.out.println("begin ChunkServer handleControllerForwardOnlyFi
 				byte[] tempData = new byte[(int) fileToReturn.length()];
 				raf.read(tempData);
 				
-				Metadata tempMetadata = new Metadata(1);
+				Metadata tempMetadata = new Metadata(1, chunknumber);
 				
 				Metadata storedMetadata = filesWithMetadataMap.get(filelocation);
 				String storedChecksum = storedMetadata.getChecksum();
@@ -857,7 +862,7 @@ if (DEBUG) { System.out.println("begin ChunkServer handleControllerForwardOnlyFi
 		ArrayList<Integer> badslices = fixedChunk.getBadSlices();
 		int numberOfDataStored = fixedChunk.getNumberOfDataStored();
 		
-		String filelocation = FILE_LOCATION + filename + "_chunk" + chunknumber;
+		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
 		
 		File fileToReturn = new File(filelocation);
 		
@@ -904,7 +909,7 @@ if (DEBUG) { System.out.println("begin ChunkServer handleControllerForwardOnlyFi
 	
 	private void saveFile(String fileName, byte[] chunkData, int chunkNumber, int versionNumber) {
 		//String fileAbsolutePath = FILE_LOCATION + fileName;
-		String path = FILE_LOCATION + fileName + "_chunk" + chunkNumber;
+		String path = this.tempFileLocationReplacement + fileName + "_chunk" + chunkNumber;
 		File fileLocationToBeSaved = new File(path.substring(0, path.lastIndexOf("/")));
 		
 		if (!fileLocationToBeSaved.exists()) {
@@ -922,7 +927,7 @@ if (DEBUG) { System.out.println("begin ChunkServer handleControllerForwardOnlyFi
 			
 			
 			// generate metadata to write for saving in a different file
-			Metadata metadata = new Metadata(versionNumber);
+			Metadata metadata = new Metadata(versionNumber, chunkNumber);
 			
 			// encrypt the data to create the checksum
 			metadata.generataSHA1Checksum(chunkData, SIZE_OF_SLICE);

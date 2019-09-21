@@ -17,8 +17,9 @@ public class Metadata {
 	private long timestamp;
 	private String checksum;
 	
-	public Metadata(int versionInfoNumber) {
+	public Metadata(int versionInfoNumber, int sequenceNumber) {
 		this.versionInfoNumber = versionInfoNumber;
+		this.sequenceNumber = sequenceNumber;
 		this.timestamp = System.currentTimeMillis();
 	}
 
