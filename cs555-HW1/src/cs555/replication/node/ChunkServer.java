@@ -10,6 +10,7 @@ import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import cs555.replication.transport.TCPHeartbeat;
 import cs555.replication.transport.TCPReceiverThread;
@@ -50,6 +51,7 @@ public class ChunkServer implements Node {
 	// just need to send the correct file. will include the client node in the message to the chunk server
 	private HashMap<String, ArrayList<Integer>> filesWithChunkNumberMap;
 	private HashMap<String, Metadata> filesWithMetadataMap;
+	private AtomicLong localFileSize;
 	private ArrayList<Metadata> newMetadataList;
 	private static final String FILE_SPACE_LOCATION = System.getProperty("user.dir");
 	private static final String FILE_LOCATION = System.getProperty("user.dir") + "/tmp/data/";
@@ -90,7 +92,15 @@ public class ChunkServer implements Node {
 	}
 	
 	public long getFreeSpaceAvailable() {
-		return new File(FILE_SPACE_LOCATION).getFreeSpace();
+		/**
+		File localDirectory = new File(this.tempFileLocationReplacement);
+		long directoryLength = 0;
+	    for (File file : localDirectory.listFiles()) {
+	        if (file.isFile())
+	        	directoryLength += file.length();
+	    }
+		**/
+		return new File(FILE_SPACE_LOCATION).getFreeSpace() - this.localFileSize.get();
 	}
 	
 	public int getNumberOfChunksStored() {
@@ -112,6 +122,7 @@ public class ChunkServer implements Node {
 		this.filesWithChunkNumberMap = new HashMap<String, ArrayList<Integer>>();
 		this.filesWithMetadataMap = new HashMap<String, Metadata>();
 		this.newMetadataList = new ArrayList<Metadata>();
+		this.localFileSize = new AtomicLong(0);
 		
 		try {
 			TCPServerThread serverThread = new TCPServerThread(0, this);
@@ -301,16 +312,18 @@ public class ChunkServer implements Node {
 					// make sure that the timestamp is more recent than the one that is currently stored on the server
 					// make sure we have metadata for the file before trying to update it
 					String metadataFilename = filename + "_chunk" + chunkNumber;
-					if (filesWithMetadataMap.containsKey(metadataFilename) ) {
-						Metadata metadata = filesWithMetadataMap.get(metadataFilename);
-						long metadataTimestamp = metadata.getTimestamp();
-						
-						// metadata is older than the new file
-						if (metadataTimestamp < timestamp) {
-							int newVersionNumber = metadata.getVersionInfoNumber() + 1;
-							saveFile(filename, chunkData, chunkNumber, newVersionNumber);
-						} else {
-							System.out.println("No action taken, file sent is older than the previous version.");
+					synchronized (filesWithMetadataMap) {
+						if (filesWithMetadataMap.containsKey(metadataFilename) ) {
+							Metadata metadata = filesWithMetadataMap.get(metadataFilename);
+							long metadataTimestamp = metadata.getTimestamp();
+							
+							// metadata is older than the new file
+							if (metadataTimestamp < timestamp) {
+								int newVersionNumber = metadata.getVersionInfoNumber() + 1;
+								saveFile(filename, chunkData, chunkNumber, newVersionNumber);
+							} else {
+								System.out.println("No action taken, file sent is older than the previous version.");
+							}
 						}
 					}
 				}
@@ -318,30 +331,38 @@ public class ChunkServer implements Node {
 		}
 		
 		// send the data to the other chunkServers if there are any contained here
-		ArrayList<NodeInformation> chunkServers = chunkDataReceived.getChunkServersNodeInfoList();
+		ArrayList<NodeInformation> chunkServers = new ArrayList<NodeInformation>();
+		chunkServers = chunkDataReceived.getChunkServersNodeInfoList();
 		
 		// more than 1 chunkServers requires more chunkServer info
 		if (chunkServers.isEmpty()) {
 			System.out.println("Error: no chunkServers left but need to still send.");
 		} else {
-			NodeInformation firstChunkServer = chunkServers.remove(0);
-			
 			try {
-				Socket chunkServer = new Socket(firstChunkServer.getNodeIPAddress(), firstChunkServer.getNodePortNumber());
-				
 				// more chunkServers to send to so use same protocol with chunk servers
-				if (!chunkServers.isEmpty()) {
+				if (chunkServers.size() > 1) {
+					NodeInformation firstChunkServer = chunkServers.remove(0);
+					Socket chunkServer = new Socket(firstChunkServer.getNodeIPAddress(), firstChunkServer.getNodePortNumber());
 					ClientSendChunkToChunkServer chunksToChunkServer = new ClientSendChunkToChunkServer(chunkServers.size(), chunkServers, chunkData, chunkNumber, filename, timestamp);
 					TCPSender chunkSender = new TCPSender(chunkServer);
+					
+					System.out.println("Forwarding Chunk Data to Chunk Server: " + firstChunkServer.getNodeIPAddress() + ", there are " + chunkServers.size() + " more chunk servers to send to.");
+					
 					chunkSender.sendData(chunksToChunkServer.getBytes());
 					
 				} else if (chunkServers.size() == 1) {
 					// only one chunkServer left so use different protocol
+					NodeInformation firstChunkServer = chunkServers.remove(0);
+					Socket chunkServer = new Socket(firstChunkServer.getNodeIPAddress(), firstChunkServer.getNodePortNumber());
 					ChunkServerSendChunkToLastChunkServer chunksToLastChunkServer = new ChunkServerSendChunkToLastChunkServer(chunkData, chunkNumber, filename, timestamp);
 					TCPSender chunkSender = new TCPSender(chunkServer);
+					
+					System.out.println("Forwarding Chunk Data to Chunk Server: " + firstChunkServer.getNodeIPAddress() + ", there are " + chunkServers.size() + " more chunk servers to send to (Should be 0).");
+					
 					chunkSender.sendData(chunksToLastChunkServer.getBytes());
-				} 
-				
+				} else {
+					System.out.println("Error in pulling chunk servers: no chunkServers left but need to still send.");
+				}
 			} catch (UnknownHostException e) {
 				e.printStackTrace();
 			} catch (IOException e) {
@@ -923,9 +944,11 @@ public class ChunkServer implements Node {
 			FileOutputStream fos = new FileOutputStream(fileToBeSaved);
 			fos.write(chunkData, 0, chunkData.length);
 			
+			this.localFileSize.getAndAdd(fileToBeSaved.length());
+			
 			System.out.println("Saving file to the following location: " + fileToBeSaved.getAbsolutePath());
 			
-			
+			fos.close();
 			// generate metadata to write for saving in a different file
 			Metadata metadata = new Metadata(versionNumber, chunkNumber);
 			
@@ -945,10 +968,12 @@ public class ChunkServer implements Node {
 			byte[] metadataByteToWrite = metadata.generateMetadataBytesToWrite(chunkData);
 			FileOutputStream metadataFos = new FileOutputStream(metadataFile);
 			
+			this.localFileSize.getAndAdd(metadataFile.length());
+			
 			System.out.println("Saving metadata to the following location: " + metadataFile.getAbsolutePath());
 			
 			metadataFos.write(metadataByteToWrite, 0, metadataByteToWrite.length);
-			
+			metadataFos.close();
 		} catch (FileNotFoundException e) {
 			System.out.println("ChunkServer: Error in saveFile: File location not found.");
 			e.printStackTrace();
