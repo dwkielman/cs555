@@ -3,6 +3,7 @@ package cs555.erasure.node;
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
@@ -11,6 +12,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Map.Entry;
 import java.util.Scanner;
 
 import cs555.erasure.transport.TCPReceiverThread;
@@ -493,39 +495,91 @@ public class Client implements Node {
 	}
 	
 	private void encodeAndProcessReceivedChunks(String filename) {
-		// Read in any of the shards that are present.
-		// (There should be checking here to make sure the input
-		// shards are the same size, but there isn't.)
-		byte [] [] shards = new byte [TOTAL_SHARDS] [];
-		boolean [] shardPresent = new boolean [TOTAL_SHARDS];
 		
-		int shardSize = 0;
-		int shardCount = 0;
-		
-		// now read the shards from the persistance store
-		for (int i = 0; i < TOTAL_SHARDS; i++) {
-			// Check if the shard is available.
-			// If available, read its content into shards[i]
-			// set shardPresent[i] = true and increase the shardCount by 1.
+		String path = System.getProperty("user.dir") + "/tmp/received/";
+		File pathFile = new File(path);
+		if (!pathFile.exists()) {
+			pathFile.mkdir();
 		}
 		
-		// We need at least DATA_SHARDS to be able to reconstruct the file.
-		if (shardCount < DATA_SHARDS) {
-			return;
-		}
+		String receivedFilePath = path + filename;
 		
-		// Make empty buffers for the missing shards.
-		for (int i = 0; i < TOTAL_SHARDS; i++) {
-			if (!shardPresent[i]) {
-				shards[i] = new byte [shardSize];
+		File receivedFile = new File(receivedFilePath);
+		
+		try {
+			if (!receivedFile.exists()) {
+					receivedFile.createNewFile();
+			} 
+			
+			FileOutputStream fos = new FileOutputStream(receivedFile);
+			
+			// cycle through all of the stored chunks, decode and store
+			// HashMap<Integer, HashMap<Integer, byte[]>> receivedFileWithChunkNumberWithShardWithBytes
+			for (HashMap.Entry<Integer, HashMap<Integer, byte[]>> entrySet : receivedFileWithChunkNumberWithShardWithBytes.entrySet()) {
+				int chunkNumber = entrySet.getKey();
+				HashMap<Integer, byte[]> tempChunkWithBytes = this.receivedFileWithChunkNumberWithShardWithBytes.get(chunkNumber);
+				
+				// Read in any of the shards that are present.
+				// (There should be checking here to make sure the input
+				// shards are the same size, but there isn't.)
+				byte [] [] shards = new byte [TOTAL_SHARDS] [];
+				boolean [] shardPresent = new boolean [TOTAL_SHARDS];
+				
+				int shardSize = 0;
+				int shardCount = 0;
+				//int shardNumber = 1;
+				
+				// now read the shards from the persistance store
+				for (Integer shardNumber : tempChunkWithBytes.keySet()) {
+					byte[] tempReceivedBytes = tempChunkWithBytes.get(shardNumber);
+					
+					// Check if the shard is available.
+					// If available, read its content into shards[i]
+					// set shardPresent[i] = true and increase the shardCount by 1.
+					shards[shardNumber] = tempReceivedBytes;
+                    shardPresent[shardNumber] = true;
+                    shardCount++;
+                    shardSize = tempReceivedBytes.length;
+				}
+				
+				// We need at least DATA_SHARDS to be able to reconstruct the file.
+				if (shardCount < DATA_SHARDS) {
+					System.out.println("Not enough DATA_SHARDS received to reconstruct the file.");
+					return;
+				}
+				
+				// Make empty buffers for the missing shards.
+				for (int i = 0; i < TOTAL_SHARDS; i++) {
+					if (!shardPresent[i]) {
+						shards[i] = new byte [shardSize];
+					}
+				}
+				
+				// Use Reed-Solomon to fill in the missing shards
+				ReedSolomon reedSolomon = new ReedSolomon(DATA_SHARDS, PARITY_SHARDS);
+				reedSolomon.decodeMissing(shards, shardPresent, 0, shardSize);
+				
+				byte[] allbytes = new byte[shardSize * DATA_SHARDS];
+	            for (int i = 0; i < DATA_SHARDS; i++) {
+	                System.arraycopy(shards[i], 0, allbytes, shardSize * i, shardSize);
+	            }
+				
+	            int chunkSize = ByteBuffer.wrap(allbytes).getInt();
+	            byte[] chunk = new byte[chunkSize];
+	            System.arraycopy(allbytes, BYTES_IN_INT, chunk, 0, chunkSize);
+	            fos.write(chunk);
 			}
+			
+			fos.close();
+			System.out.println("File has been saved to the following location: " + pathFile.getAbsolutePath());
+			
+			// remove the file from the map, no longer building it
+			this.receivedFileWithChunkNumberWithShardWithBytes.clear();
+
+			System.out.println("Finished merging file: " + filename);
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
-		
-		// Use Reed-Solomon to fill in the missing shards
-		ReedSolomon reedSolomon = new ReedSolomon(DATA_SHARDS, PARITY_SHARDS);
-		reedSolomon.decodeMissing(shards, shardPresent, 0, shardSize);
-		
-		
 	}
 	
 	private static ArrayList<byte[]> splitFileIntoBytes(File file) {
