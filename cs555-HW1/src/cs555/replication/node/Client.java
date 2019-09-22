@@ -440,6 +440,7 @@ public class Client implements Node {
 				filesAsBytesList.add(chunkSizeBytes);
 				chunkSizeBytes = new byte[SIZE_OF_CHUNK];
 			}
+			bis.close();
 		
 		} catch  (IOException ioe) {
 			ioe.printStackTrace();
@@ -473,7 +474,7 @@ public class Client implements Node {
 				byte[] data = dataToWrite.get(i);
 				fos.write(data);
 			}
-			
+			fos.close();
 			System.out.println("File has been saved to the following location: " + pathFile.getAbsolutePath());
 			
 			// remove the file from the map, no longer building it
