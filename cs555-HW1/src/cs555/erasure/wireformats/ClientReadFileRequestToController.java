@@ -101,7 +101,7 @@ public class ClientReadFileRequestToController implements Event {
 		return this.chunkNumber;
 	}
 	
-	public NodeInformation getClienNodeInformation() {
+	public NodeInformation getClientNodeInformation() {
 		return this.clienNodeInformation;
 	}
 

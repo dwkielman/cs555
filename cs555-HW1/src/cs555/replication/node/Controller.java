@@ -85,10 +85,6 @@ public class Controller implements Node {
 		tCPControllerHeartBeatThread.start();
 	}
 	
-	public int getTestMessage() {
-		return 1;
-	}
-	
 	public Controller() {}
 	
 	public void addDeadChunkServer(NodeInformation deadChunkServer) {

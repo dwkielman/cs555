@@ -62,7 +62,6 @@ public class Client implements Node {
 	private static final int SIZE_OF_CHUNK = 1024 * 64;
 	private static Client client;
 	
-	
 	private Client(String controllerIPAddress, int controllerPortNumber) {
 		this.controllerNodeInformation = new NodeInformation(controllerIPAddress, controllerPortNumber);
 		this.locallyStoredShardsWithBytes = new HashMap<Integer, byte[]>();
@@ -109,16 +108,10 @@ public class Client implements Node {
 			case Protocol.CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT:
 				handleControllerChunkServerToReadResponseToClient(event);
 				break;
-			/**
-			// CONTROLLER_RELEASE_CLIENT = 6008
-			case Protocol.CONTROLLER_RELEASE_CLIENT:
-				handleControllerReleaseClient(event);
-				break;
 			// CHUNKSERVER_SEND_CHUNK_TO_CLIENT = 7002
 			case Protocol.CHUNKSERVER_SEND_CHUNK_TO_CLIENT:
 				ChunkServerSendChunkToClient(event);
 				break;
-				**/
 			default:
 				System.out.println("Invalid Event to Node.");
 				return;

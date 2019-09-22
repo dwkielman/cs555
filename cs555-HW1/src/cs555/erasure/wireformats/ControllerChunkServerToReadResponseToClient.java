@@ -11,7 +11,6 @@ import java.util.HashMap;
 import java.util.Map;
 
 import cs555.erasure.util.NodeInformation;
-// CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT
 public class ControllerChunkServerToReadResponseToClient implements Event {
 
 	private final int type = Protocol.CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT;
