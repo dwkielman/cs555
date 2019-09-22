@@ -41,7 +41,7 @@ import cs555.replication.wireformats.Protocol;
 
 public class Client implements Node {
 	
-	private static boolean DEBUG = true;
+	private static boolean DEBUG = false;
 	private NodeInformation controllerNodeInformation;
 	private String localHostIPAddress;
 	private int localHostPortNumber;

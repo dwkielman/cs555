@@ -21,9 +21,10 @@ public class ControllerForwardFixCorruptChunkToChunkServer implements Event {
 	private int numberOfBadSlices;
 	private ArrayList<Integer> badSlices;
 	private int totalnumberofchunks;
+	private boolean forwardChunkToClient;
 	
 	public ControllerForwardFixCorruptChunkToChunkServer(NodeInformation chunkServer, NodeInformation client, int chunknumber,
-			String filename, int numberOfBadSlices, ArrayList<Integer> badSlices, int totalnumberofchunks) {
+			String filename, int numberOfBadSlices, ArrayList<Integer> badSlices, int totalnumberofchunks, boolean forwardChunkToClient) {
 		super();
 		this.chunkServer = chunkServer;
 		this.client = client;
@@ -32,6 +33,7 @@ public class ControllerForwardFixCorruptChunkToChunkServer implements Event {
 		this.numberOfBadSlices = numberOfBadSlices;
 		this.badSlices = badSlices;
 		this.totalnumberofchunks = totalnumberofchunks;
+		this.forwardChunkToClient = forwardChunkToClient;
 	}
 	
 	@Override
@@ -49,6 +51,7 @@ public class ControllerForwardFixCorruptChunkToChunkServer implements Event {
 	 * numberOfBadSlices
 	 * badSlices
 	 * totalnumberofchunks
+	 * forwardChunkToClient
 	 * @throws IOException 
 	 */
 	public ControllerForwardFixCorruptChunkToChunkServer(byte[] marshalledBytes) throws IOException {
@@ -104,6 +107,9 @@ public class ControllerForwardFixCorruptChunkToChunkServer implements Event {
 
 		this.totalnumberofchunks = totalnumberofchunks;
 		
+		// forwardChunkToClient
+		this.forwardChunkToClient = din.readBoolean();
+		
 		baInputStream.close();
 		din.close();
 	}
@@ -147,6 +153,9 @@ public class ControllerForwardFixCorruptChunkToChunkServer implements Event {
 		// totalnumberofchunks
 		dout.writeInt(this.totalnumberofchunks);
 				
+		// forwardChunkToClient
+		dout.writeBoolean(this.forwardChunkToClient);
+		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
@@ -181,5 +190,9 @@ public class ControllerForwardFixCorruptChunkToChunkServer implements Event {
 
 	public int getTotalNumberOfChunks() {
 		return totalnumberofchunks;
+	}
+	
+	public boolean getForwardChunkToClient() {
+		return forwardChunkToClient;
 	}
 }

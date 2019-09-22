@@ -43,12 +43,10 @@ import cs555.replication.wireformats.Protocol;
 
 public class ChunkServer implements Node {
 	
-	private static boolean DEBUG = true;
+	private static boolean DEBUG = false;
 	private NodeInformation controllerNodeInformation;
 	private String localHostIPAddress;
 	private int localHostPortNumber;
-	// may not need this, instead may need something for storing the location of where data is and a file name. doesn't matter which client requests the data,
-	// just need to send the correct file. will include the client node in the message to the chunk server
 	private HashMap<String, ArrayList<Integer>> filesWithChunkNumberMap;
 	private HashMap<String, Metadata> filesWithMetadataMap;
 	private AtomicLong localFileSize;
@@ -422,6 +420,7 @@ public class ChunkServer implements Node {
 		if (DEBUG) { System.out.println("end ChunkServer handleLastDataReceived"); }
 	}
 	
+	// METHOD IS GOOD, NO MODIFICAITONS NEEDED
 	private void handleClientRequestToReadFromChunkServer(Event event) {
 		if (DEBUG) { System.out.println("begin ChunkServer handleClientRequestToReadFromChunkServer"); }
 		ClientRequestToReadFromChunkServer clientRequest = (ClientRequestToReadFromChunkServer) event;
@@ -429,6 +428,7 @@ public class ChunkServer implements Node {
 		String filename = clientRequest.getFilename();
 		int chunknumber = clientRequest.getChunkNumber();
 		int totalNumberOfChunks = clientRequest.getTotalNumberOfChunks();
+		NodeInformation client = clientRequest.getClientNodeInformation();
 		
 		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
 		
@@ -447,10 +447,11 @@ public class ChunkServer implements Node {
 				
 				tempMetadata.generataSHA1Checksum(tempData, SIZE_OF_SLICE);
 				
+				raf.close();
+				
 				if (tempMetadata.getChecksum().equals(storedChecksum)) {
 					// success, requested data is same as the one stored on this system
-					NodeInformation client = clientRequest.getClientNodeInformation();
-					
+
 					Socket clientServer = new Socket(client.getNodeIPAddress(), client.getNodePortNumber());
 					
 					TCPSender clientSender = new TCPSender(clientServer);
@@ -474,8 +475,9 @@ public class ChunkServer implements Node {
 					
 					ArrayList<Integer> badSlices = new ArrayList<Integer>();
 					
-					// local metadata had a slice added to it or possibly modified one line
+					// local metadata had a slice removed from it or possibly modified one line
 					if (storedChecksumEntriesLength >= tempChecksumEntriesLength) {
+						System.out.println("Stored checksum is greater than or equal to local corrupt data.");
 						int i;
 						// loop through the entries that are there to find corrupt slices
 						for (i = 0; i < tempChecksumEntriesLength; i++) {
@@ -483,26 +485,30 @@ public class ChunkServer implements Node {
 								badSlices.add(i);
 							}
 						}
-						// add all extra slices that were added as needing to be fixed
+						// add all extra slices that were removed as needing to be fixed and stored in bad slices
 						for (int j = i; j < storedChecksumEntriesLength; j++) {
 							badSlices.add(j);
 						}
 						
 					} else {
-						// local metadata had a slice deleted from it, need to find which slice it is
+						// local metadata had a slice added to it, need to find which slices are still not corrupt and only fix corrupt up to the length of the stored file
+						System.out.println("Stored checksum is less than local corrupt data.");
 						for (int i = 0; i < storedChecksumEntriesLength; i++) {
 							if (!storedChecksumEntries[i].equals(tempChecksumEntries[i])) {
 								badSlices.add(i);
-								// once the bad slice has been found, all subsequent lines will be corrupt also and need to simply be replaced
-								for (int j = i; j < tempChecksumEntriesLength; j++) {
+								// once the bad slice has been found, all subsequent lines will be corrupt also and need to simply be replaced. temp is too large so don't loop on that
+								for (int j = i; j < storedChecksumEntriesLength; j++) {
 									badSlices.add(j);
 								}
 								break;
 							}
 						}
 					}
-					NodeInformation client = clientRequest.getClientNodeInformation();
-					ChunkServerSendCorruptChunkToController corruptChunkSender = new ChunkServerSendCorruptChunkToController(chunkServerNodeInformation, client, chunknumber, filename, badSlices.size(), badSlices, totalNumberOfChunks);
+					
+					boolean forwardChunkToClient = true;
+					
+					System.out.println("Bad Slices passed from corrupt chunk server: " + badSlices.toString());
+					ChunkServerSendCorruptChunkToController corruptChunkSender = new ChunkServerSendCorruptChunkToController(chunkServerNodeInformation, client, chunknumber, filename, badSlices.size(), badSlices, totalNumberOfChunks, forwardChunkToClient);
 					this.controllerSender.sendData(corruptChunkSender.getBytes());
 				}
 			} catch (FileNotFoundException e) {
@@ -517,7 +523,9 @@ public class ChunkServer implements Node {
 				synchronized (filesWithChunkNumberMap) {
 					filesWithChunkNumberMap.get(filename).remove(chunknumber);
 				}
-				ChunkServerDeletedChunkToController deletedChunk = new ChunkServerDeletedChunkToController(chunkServerNodeInformation, chunknumber, filename);
+				
+				boolean forwardChunkToClient = true;
+				ChunkServerDeletedChunkToController deletedChunk = new ChunkServerDeletedChunkToController(chunkServerNodeInformation, chunknumber, filename, client, totalNumberOfChunks, forwardChunkToClient);
 				this.controllerSender.sendData(deletedChunk.getBytes());
 			} catch (IOException e) {
 				e.printStackTrace();
@@ -526,6 +534,8 @@ public class ChunkServer implements Node {
 
 		if (DEBUG) { System.out.println("end ChunkServer handleClientRequestToReadFromChunkServer"); }
 	}
+	
+	// METHOD IS GOOD, NO MODIFICAITONS NEEDED
 	private void handleControllerForwardDataToNewChunkServer(Event event) {
 		if (DEBUG) { System.out.println("begin ChunkServer handleControllerForwardDataToNewChunkServer"); }
 		
@@ -533,6 +543,9 @@ public class ChunkServer implements Node {
 		
 		int chunknumber = forwardData.getChunkNumber();
 		String filename = forwardData.getFilename();
+		NodeInformation client = forwardData.getClient();
+		int totalNumberOfChunks = forwardData.getTotalNumberOfChunks();
+		boolean forwardChunkToClient = forwardData.getForwardChunkToClient();
 		
 		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
 		
@@ -551,14 +564,26 @@ public class ChunkServer implements Node {
 				
 				tempMetadata.generataSHA1Checksum(tempData, SIZE_OF_SLICE);
 				
+				raf.close();
+				
 				if (tempMetadata.getChecksum().equals(storedChecksum)) {
 					// success, requested data is same as the one stored on this system
+					long timestamp = fileToReturn.lastModified();
+					
+					// forward the data only if needed to
+					if (forwardChunkToClient) {
+						Socket clientServer = new Socket(client.getNodeIPAddress(), client.getNodePortNumber());
+						
+						TCPSender clientSender = new TCPSender(clientServer);
+						
+						ChunkServerSendChunkToClient chunkToSend = new ChunkServerSendChunkToClient(tempData, chunknumber, filename, totalNumberOfChunks);
+						
+						clientSender.sendData(chunkToSend.getBytes());
+					}
+					
 					NodeInformation newChunkServer = forwardData.getChunkServer();
 					
 					Socket chunkServerSocket = new Socket(newChunkServer.getNodeIPAddress(), newChunkServer.getNodePortNumber());
-
-					long timestamp = fileToReturn.lastModified();
-					
 					ChunkServerSendChunkToLastChunkServer chunksToLastChunkServer = new ChunkServerSendChunkToLastChunkServer(tempData, chunknumber, filename, timestamp);
 					
 					TCPSender chunkSender = new TCPSender(chunkServerSocket);
@@ -579,8 +604,9 @@ public class ChunkServer implements Node {
 					
 					ArrayList<Integer> badSlices = new ArrayList<Integer>();
 					
-					// local metadata had a slice added to it or possibly modified one line
+					// local metadata had a slice removed from it or possibly modified one line
 					if (storedChecksumEntriesLength >= tempChecksumEntriesLength) {
+						System.out.println("Stored checksum is greater than or equal to local corrupt data.");
 						int i;
 						// loop through the entries that are there to find corrupt slices
 						for (i = 0; i < tempChecksumEntriesLength; i++) {
@@ -588,25 +614,28 @@ public class ChunkServer implements Node {
 								badSlices.add(i);
 							}
 						}
-						// add all extra slices that were added as needing to be fixed
+						// add all extra slices that were removed as needing to be fixed and stored in bad slices
 						for (int j = i; j < storedChecksumEntriesLength; j++) {
 							badSlices.add(j);
 						}
 						
 					} else {
-						// local metadata had a slice deleted from it, need to find which slice it is
+						// local metadata had a slice added to it, need to find which slices are still not corrupt and only fix corrupt up to the length of the stored file
+						System.out.println("Stored checksum is less than local corrupt data.");
 						for (int i = 0; i < storedChecksumEntriesLength; i++) {
 							if (!storedChecksumEntries[i].equals(tempChecksumEntries[i])) {
 								badSlices.add(i);
-								// once the bad slice has been found, all subsequent lines will be corrupt also and need to simply be replaced
-								for (int j = i; j < tempChecksumEntriesLength; j++) {
+								// once the bad slice has been found, all subsequent lines will be corrupt also and need to simply be replaced. temp is too large so don't loop on that
+								for (int j = i; j < storedChecksumEntriesLength; j++) {
 									badSlices.add(j);
 								}
 								break;
 							}
 						}
 					}
-					ChunkServerSendOnlyCorruptChunkToController corruptChunkSender = new ChunkServerSendOnlyCorruptChunkToController(chunkServerNodeInformation, chunknumber, filename, badSlices.size(), badSlices);
+					
+					System.out.println("Bad Slices passed from corrupt chunk server: " + badSlices.toString());
+					ChunkServerSendCorruptChunkToController corruptChunkSender = new ChunkServerSendCorruptChunkToController(chunkServerNodeInformation, client, chunknumber, filename, badSlices.size(), badSlices, totalNumberOfChunks, forwardChunkToClient);
 					this.controllerSender.sendData(corruptChunkSender.getBytes());
 				}
 			} catch (FileNotFoundException e) {
@@ -614,10 +643,24 @@ public class ChunkServer implements Node {
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
+		} else {
+			// chunk has been deleted, need to report it to the controller and get missing chunk
+			System.out.println("Data has been deleted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
+			try {
+				synchronized (filesWithChunkNumberMap) {
+					filesWithChunkNumberMap.get(filename).remove(chunknumber);
+				}
+				ChunkServerDeletedChunkToController deletedChunk = new ChunkServerDeletedChunkToController(chunkServerNodeInformation, chunknumber, filename, client, totalNumberOfChunks, forwardChunkToClient);
+				this.controllerSender.sendData(deletedChunk.getBytes());
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
 		}
+		
 		if (DEBUG) { System.out.println("end ChunkServer handleControllerForwardDataToNewChunkServer"); }
 	}
 	
+	// METHOD IS GOOD, NO MODIFICAITONS NEEDED
 	private void handleControllerForwardFixCorruptChunkToChunkServer(Event event) {
 		if (DEBUG) { System.out.println("begin ChunkServer handleControllerForwardFixCorruptChunkToChunkServer"); }
 		
@@ -625,9 +668,11 @@ public class ChunkServer implements Node {
 		
 		int chunknumber = fixCorrupt.getChunknumber();
 		String filename = fixCorrupt.getFilename();
-		
+		NodeInformation client = fixCorrupt.getClient();
 		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
-		
+		int totalNumberOfChunks = fixCorrupt.getTotalNumberOfChunks();
+		boolean forwardChunkToClient = fixCorrupt.getForwardChunkToClient();
+
 		File fileToReturn = new File(filelocation);
 		
 		if (fileToReturn.exists()) {
@@ -643,35 +688,61 @@ public class ChunkServer implements Node {
 				
 				tempMetadata.generataSHA1Checksum(tempData, SIZE_OF_SLICE);
 				
+				raf.close();
+				
 				if (tempMetadata.getChecksum().equals(storedChecksum)) {
 					// success, requested data is same as the one stored on this system
-					// forward to the client like normal
-					NodeInformation client = fixCorrupt.getClient();
-					int totalNumberOfChunks = fixCorrupt.getTotalNumberOfChunks();
 					
-					Socket clientServer = new Socket(client.getNodeIPAddress(), client.getNodePortNumber());
-					
-					TCPSender clientSender = new TCPSender(clientServer);
-					
-					ChunkServerSendChunkToClient chunkToSend = new ChunkServerSendChunkToClient(tempData, chunknumber, filename, totalNumberOfChunks);
-					
-					clientSender.sendData(chunkToSend.getBytes());
+					if (forwardChunkToClient) {
+						// forward to the client like normal
+						Socket clientServer = new Socket(client.getNodeIPAddress(), client.getNodePortNumber());
+						
+						TCPSender clientSender = new TCPSender(clientServer);
+						
+						ChunkServerSendChunkToClient chunkToSend = new ChunkServerSendChunkToClient(tempData, chunknumber, filename, totalNumberOfChunks);
+						
+						clientSender.sendData(chunkToSend.getBytes());
+					}
 					
 					// now find the correct slices to forward that data to the chunk server missing those slices
 					int numberOfBadSlices = fixCorrupt.getNumberOfBadSlices();
-					byte[] fixedSlices = new byte[numberOfBadSlices];
+					byte[] fixedSlices = new byte[numberOfBadSlices * SIZE_OF_SLICE];
 					
 					ArrayList<Integer> badslices = fixCorrupt.getBadSlices();
 					
+					System.out.println("Fixing corrupt chunk. Size of tempData stored is: " + tempData.length);
+					
 					int index = 0;
+					int sliceCount = 1;
 					for (Integer i : badslices) {
-						if (i < tempData.length) {
-							fixedSlices[index] = tempData[i];
-							index ++;
+						//if (i < tempData.length) {
+						if ((sliceCount * SIZE_OF_SLICE) < tempData.length) {
+							System.out.println("Standard Slice Size corruption fix.");
+							int dataIndex = i * SIZE_OF_SLICE;
+							int lastLoopIndex = 0;
+							for (int j = index; j < SIZE_OF_SLICE; j++) {
+								fixedSlices[j] = tempData[dataIndex];
+								dataIndex++;
+								lastLoopIndex = j;
+							}
+							index = lastLoopIndex + 1;
+							sliceCount++;
+							//fixedSlices[index] = tempData[i];
+							//index ++;
+						} else {
+							System.out.println("Stub Slice Size corruption fix.");
+							// non-standard slice length, need to calculate how many bytes to write without going out of bounds
+							int totalRemainingBytes = (sliceCount * SIZE_OF_SLICE) - tempData.length;
+							int dataIndex = i * SIZE_OF_SLICE;
+							for (int j = index; j < totalRemainingBytes; j++) {
+								fixedSlices[j] = tempData[dataIndex];
+								dataIndex++;
+							}
 						}
 					}
 					
-					int numberOfDataStored = tempData.length;
+					//int numberOfDataStored = tempData.length;
+					int numberOfDataStored = storedChecksum.split("\n").length;
 					
 					long timestamp = fileToReturn.lastModified();
 					
@@ -725,7 +796,8 @@ public class ChunkServer implements Node {
 							}
 						}
 					}
-					ChunkServerSendOnlyCorruptChunkToController corruptChunkSender = new ChunkServerSendOnlyCorruptChunkToController(chunkServerNodeInformation, chunknumber, filename, badSlices.size(), badSlices);
+					System.out.println("Bad Slices passed from corrupt chunk server: " + badSlices.toString());
+					ChunkServerSendOnlyCorruptChunkToController corruptChunkSender = new ChunkServerSendOnlyCorruptChunkToController(chunkServerNodeInformation, chunknumber, filename, badSlices.size(), badSlices, totalNumberOfChunks);
 					this.controllerSender.sendData(corruptChunkSender.getBytes());
 				}
 			} catch (FileNotFoundException e) {
@@ -740,7 +812,7 @@ public class ChunkServer implements Node {
 				synchronized (filesWithChunkNumberMap) {
 					filesWithChunkNumberMap.get(filename).remove(chunknumber);
 				}
-				ChunkServerDeletedChunkToController deletedChunk = new ChunkServerDeletedChunkToController(chunkServerNodeInformation, chunknumber, filename);
+				ChunkServerDeletedChunkToController deletedChunk = new ChunkServerDeletedChunkToController(chunkServerNodeInformation, chunknumber, filename, client, totalNumberOfChunks, forwardChunkToClient);
 				this.controllerSender.sendData(deletedChunk.getBytes());
 			} catch (IOException e) {
 				e.printStackTrace();
@@ -753,10 +825,11 @@ public class ChunkServer implements Node {
 	private void handleControllerForwardOnlyFixCorruptChunkToChunkServer(Event event) {
 		if (DEBUG) { System.out.println("begin ChunkServer handleControllerForwardOnlyFixCorruptChunkToChunkServer"); }
 		
-	ControllerForwardOnlyFixCorruptChunkToChunkServer fixCorrupt = (ControllerForwardOnlyFixCorruptChunkToChunkServer) event;
+		ControllerForwardOnlyFixCorruptChunkToChunkServer fixCorrupt = (ControllerForwardOnlyFixCorruptChunkToChunkServer) event;
 		
 		int chunknumber = fixCorrupt.getChunknumber();
 		String filename = fixCorrupt.getFilename();
+		int totalNumberOfChunks = fixCorrupt.getTotalNumberOfChunks();
 		
 		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
 		
@@ -775,6 +848,8 @@ public class ChunkServer implements Node {
 				
 				tempMetadata.generataSHA1Checksum(tempData, SIZE_OF_SLICE);
 				
+				raf.close();
+				
 				if (tempMetadata.getChecksum().equals(storedChecksum)) {
 					// success, requested data is same as the one stored on this system
 
@@ -784,15 +859,39 @@ public class ChunkServer implements Node {
 					
 					ArrayList<Integer> badslices = fixCorrupt.getBadSlices();
 					
+					System.out.println("Fixing corrupt chunk. Size of tempData stored is: " + tempData.length);
+					
 					int index = 0;
+					int sliceCount = 1;
 					for (Integer i : badslices) {
-						if (i < tempData.length) {
-							fixedSlices[index] = tempData[i];
-							index ++;
+						//if (i < tempData.length) {
+						if ((sliceCount * SIZE_OF_SLICE) < tempData.length) {
+							System.out.println("Standard Slice Size corruption fix.");
+							int dataIndex = i * SIZE_OF_SLICE;
+							int lastLoopIndex = 0;
+							for (int j = index; j < SIZE_OF_SLICE; j++) {
+								fixedSlices[j] = tempData[dataIndex];
+								dataIndex++;
+								lastLoopIndex = j;
+							}
+							index = lastLoopIndex + 1;
+							sliceCount++;
+							//fixedSlices[index] = tempData[i];
+							//index ++;
+						} else {
+							System.out.println("Stub Slice Size corruption fix.");
+							// non-standard slice length, need to calculate how many bytes to write without going out of bounds
+							int totalRemainingBytes = (sliceCount * SIZE_OF_SLICE) - tempData.length;
+							int dataIndex = i * SIZE_OF_SLICE;
+							for (int j = index; j < totalRemainingBytes; j++) {
+								fixedSlices[j] = tempData[dataIndex];
+								dataIndex++;
+							}
 						}
 					}
 					
-					int numberOfDataStored = tempData.length;
+					//int numberOfDataStored = tempData.length;
+					int numberOfDataStored = storedChecksum.split("\n").length;
 					
 					long timestamp = fileToReturn.lastModified();
 					
@@ -846,7 +945,9 @@ public class ChunkServer implements Node {
 							}
 						}
 					}
-					ChunkServerSendOnlyCorruptChunkToController corruptChunkSender = new ChunkServerSendOnlyCorruptChunkToController(chunkServerNodeInformation, chunknumber, filename, badSlices.size(), badSlices);
+					
+					System.out.println("Bad Slices passed from corrupt chunk server: " + badSlices.toString());
+					ChunkServerSendOnlyCorruptChunkToController corruptChunkSender = new ChunkServerSendOnlyCorruptChunkToController(chunkServerNodeInformation, chunknumber, filename, badSlices.size(), badSlices, totalNumberOfChunks);
 					this.controllerSender.sendData(corruptChunkSender.getBytes());
 				}
 			} catch (FileNotFoundException e) {
@@ -861,7 +962,9 @@ public class ChunkServer implements Node {
 				synchronized (filesWithChunkNumberMap) {
 					filesWithChunkNumberMap.get(filename).remove(chunknumber);
 				}
-				ChunkServerDeletedChunkToController deletedChunk = new ChunkServerDeletedChunkToController(chunkServerNodeInformation, chunknumber, filename);
+				// client node can be null in this case due to the forwarding boolean will be set to false
+				NodeInformation client = null;
+				ChunkServerDeletedChunkToController deletedChunk = new ChunkServerDeletedChunkToController(chunkServerNodeInformation, chunknumber, filename, client, totalNumberOfChunks, false);
 				this.controllerSender.sendData(deletedChunk.getBytes());
 			} catch (IOException e) {
 				e.printStackTrace();
@@ -892,14 +995,66 @@ public class ChunkServer implements Node {
 				RandomAccessFile raf = new RandomAccessFile(fileToReturn, "rw");
 				byte[] tempData = new byte[(int) fileToReturn.length()];
 				raf.read(tempData);
-				
+
 				// using the number of data stored will build a byte array that should hold all of the correct values now
 				// just need to pull the correct data from either the original array or the new array
-				byte[] combinedBytes = new byte[numberOfDataStored];
-				
-				int fixedBytesCounter = 0;
+				byte[] combinedBytes = new byte[numberOfDataStored * SIZE_OF_SLICE];
+
+				System.out.println("###### DEBUGGING INFO #######");
+				System.out.println("Bad Slices are: " + badslices.toString());
+				System.out.println("Number of Data Stored being passed: " + numberOfDataStored);
+				System.out.println("Combined Bytes array size (initialized to number of data stored): " + combinedBytes.length);
+				System.out.println("Fixed Bytes array size (Bytes passed to this function from another chunk server):" + fixedBytes.length);
+				System.out.println("Temp Data array size (local file saved by re-read): " + tempData.length);
+				System.out.println("###### DEBUGGING INFO #######");
+				System.out.println("###### DEBUGGING INFO #######");
+				System.out.println("###### DEBUGGING INFO #######");
+
+				int tempByteCountLength = tempData.length;
 				int tempBytesCounter = 0;
-				
+				int fixedBytesCounter = 0;
+				for (int i = 0; i < numberOfDataStored; i++) {
+					// bad slice is stored in the fixed bytes array
+					if (badslices.contains(i)) {
+						// slice size could be less than a normal slice and will be less bytes
+						// should only happen in the final array index
+						if (i == numberOfDataStored - 1) {
+							System.out.println("Fixing final stub array slice.");
+							int totalRemainingBytes = (i * SIZE_OF_SLICE) - tempByteCountLength;
+							for (int j = 0; j < totalRemainingBytes; j++) {
+								combinedBytes[j] = fixedBytes[fixedBytesCounter];
+								fixedBytesCounter++;
+							}
+						} else {
+							System.out.println("Fixing standard array slice.");
+							// standard slice
+							for (int j = 0; j < SIZE_OF_SLICE; j++) {
+								combinedBytes[j] = fixedBytes[fixedBytesCounter];
+								fixedBytesCounter++;
+							}
+						}
+					} else {
+						// slice size could be less than a normal slice and will be less bytes
+						// should only happen in the final array index
+						if (i == numberOfDataStored - 1) {
+							System.out.println("Using stored final stub array slice.");
+							int totalRemainingBytes = (i * SIZE_OF_SLICE) - tempByteCountLength;
+							for (int j = 0; j < totalRemainingBytes; j++) {
+								combinedBytes[j] = tempData[fixedBytesCounter];
+								fixedBytesCounter++;
+							}
+						} else {
+							System.out.println("Using stored standard array slice.");
+							// standard slice
+							// original data is fine to use, use that
+							for (int j = 0; j < SIZE_OF_SLICE; j++) {
+								combinedBytes[j] = tempData[tempBytesCounter];
+								tempBytesCounter++;
+							}
+						}
+					}
+				}
+				/**
 				for (int i = 0; i < numberOfDataStored; i++) {
 					if (badslices.contains(i)) {
 						combinedBytes[i] = fixedBytes[fixedBytesCounter];
@@ -909,9 +1064,11 @@ public class ChunkServer implements Node {
 						tempBytesCounter++;
 					}
 				}
-				
+				**/
 				Metadata storedMetadata = filesWithMetadataMap.get(filelocation);
 				int versionNumber = storedMetadata.getVersionInfoNumber() + 1;
+				
+				raf.close();
 				
 				saveFile(filename, combinedBytes, chunknumber, versionNumber);
 				

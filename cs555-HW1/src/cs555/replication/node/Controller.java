@@ -44,7 +44,7 @@ import cs555.replication.wireformats.Protocol;
 
 public class Controller implements Node {
 
-	private static final boolean DEBUG = true;
+	private static final boolean DEBUG = false;
 	private int portNumber;
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
@@ -107,7 +107,6 @@ public class Controller implements Node {
 		System.out.println("Getting Live Chunk Servers.");
 		synchronized (chunkServerHeartbeatMetadaList) {
 			if (!chunkServerHeartbeatMetadaList.isEmpty()) {
-				System.out.println("Heartbeats aren't empty.");
 				return chunkServerHeartbeatMetadaList.keySet();
 			} else {
 				System.out.println("Heartbeats are empty.");
@@ -519,6 +518,9 @@ public class Controller implements Node {
 		NodeInformation corruptChunkServer = deletedChunk.getChunkServer();
 		int chunknumber = deletedChunk.getChunkNumber();
 		String filename = deletedChunk.getFilename();
+		NodeInformation client = deletedChunk.getClient();
+		int totalNumberOfChunks = deletedChunk.getTotalNumberOfChunks();
+		boolean forwardChunkToClient = deletedChunk.getForwardChunkToClient();
 		
 		synchronized (filesWithChunksNodeInformationMap) {
 			if (filesWithChunksNodeInformationMap.containsKey(filename)) {
@@ -539,7 +541,7 @@ public class Controller implements Node {
 								tempMap.put(chunknumber, chunkServers);
 								filesWithChunksNodeInformationMap.put(filename, tempMap);
 
-								ControllerForwardDataToNewChunkServer forwardData = new ControllerForwardDataToNewChunkServer(corruptChunkServer, chunknumber, filename);
+								ControllerForwardDataToNewChunkServer forwardData = new ControllerForwardDataToNewChunkServer(corruptChunkServer, chunknumber, filename, client, totalNumberOfChunks, forwardChunkToClient);
 								
 								this.chunkServerNodesMap.get(activeChunkServer).sendData(forwardData.getBytes());
 							} catch (IOException e) {
@@ -570,6 +572,7 @@ public class Controller implements Node {
 		String filename = sendCorruptChunk.getFilename();
 		int chunknumber = sendCorruptChunk.getChunknumber();
 		NodeInformation corruptChunkServer = sendCorruptChunk.getChunkServer();
+		boolean forwardChunkToClient = sendCorruptChunk.getForwardChunkToClient();
 		
 		synchronized (filesWithChunksNodeInformationMap) {
 			if (filesWithChunksNodeInformationMap.containsKey(filename)) {
@@ -593,7 +596,7 @@ public class Controller implements Node {
 								ArrayList<Integer> badSlices = sendCorruptChunk.getBadSlices();
 								int totalnumberofchunks = sendCorruptChunk.getTotalNumberOfChunks();
 								
-								ControllerForwardFixCorruptChunkToChunkServer fixCorrupt = new ControllerForwardFixCorruptChunkToChunkServer(corruptChunkServer, client, chunknumber, filename, numberOfBadSlices, badSlices, totalnumberofchunks);
+								ControllerForwardFixCorruptChunkToChunkServer fixCorrupt = new ControllerForwardFixCorruptChunkToChunkServer(corruptChunkServer, client, chunknumber, filename, numberOfBadSlices, badSlices, totalnumberofchunks, forwardChunkToClient);
 								
 								this.chunkServerNodesMap.get(activeChunkServer).sendData(fixCorrupt.getBytes());
 							} catch (IOException e) {
@@ -619,11 +622,12 @@ public class Controller implements Node {
 	private void handleChunkServerSendOnlyCorruptChunkToController(Event event) {
 		if (DEBUG) { System.out.println("begin Controller handleChunkServerSendOnlyCorruptChunkToController"); }
 		
-	ChunkServerSendOnlyCorruptChunkToController sendCorruptChunk = (ChunkServerSendOnlyCorruptChunkToController) event;
+		ChunkServerSendOnlyCorruptChunkToController sendCorruptChunk = (ChunkServerSendOnlyCorruptChunkToController) event;
 		
 		String filename = sendCorruptChunk.getFilename();
 		int chunknumber = sendCorruptChunk.getChunknumber();
 		NodeInformation corruptChunkServer = sendCorruptChunk.getChunkServer();
+		int totalNumberOfChunks = sendCorruptChunk.getTotalNumberOfChunks();
 		
 		synchronized (filesWithChunksNodeInformationMap) {
 			if (filesWithChunksNodeInformationMap.containsKey(filename)) {
@@ -645,7 +649,7 @@ public class Controller implements Node {
 								int numberOfBadSlices = sendCorruptChunk.getNumberOfBadSlices();
 								ArrayList<Integer> badSlices = sendCorruptChunk.getBadSlices();
 								
-								ControllerForwardOnlyFixCorruptChunkToChunkServer fixCorrupt = new ControllerForwardOnlyFixCorruptChunkToChunkServer(corruptChunkServer, chunknumber, filename, numberOfBadSlices, badSlices);
+								ControllerForwardOnlyFixCorruptChunkToChunkServer fixCorrupt = new ControllerForwardOnlyFixCorruptChunkToChunkServer(corruptChunkServer, chunknumber, filename, numberOfBadSlices, badSlices, totalNumberOfChunks);
 								
 								this.chunkServerNodesMap.get(activeChunkServer).sendData(fixCorrupt.getBytes());
 							} catch (IOException e) {
@@ -679,7 +683,8 @@ public class Controller implements Node {
 							
 							HashMap<Integer, ArrayList<NodeInformation>> fileentry = filesWithChunksNodeInformationMap.get(filename);
 							for (int chunkNumber : fileentry.keySet()) {
-								ArrayList<NodeInformation> chunkServers = fileentry.get(chunkNumber);
+								ArrayList<NodeInformation> chunkServers = new ArrayList<NodeInformation>();
+								chunkServers = fileentry.get(chunkNumber);
 								if (chunkServers.contains(deadChunkServer)) {
 									chunkServers.remove(deadChunkServer);
 									
@@ -699,12 +704,12 @@ public class Controller implements Node {
 										}
 									}
 									
-									if (newChunkServer != null) {
+									if (newChunkServer != null && !chunkServers.isEmpty()) {
 										// get another active chunk server to update this node information provided it is not also currently one of our potential dead chunk servers
-										for (NodeInformation ni : chunkServers) {
+										//for (NodeInformation ni : chunkServers) {
 											//if (!deadChunkServers.contains(ni)) {
 												try {
-													NodeInformation activeChunkServer = ni;
+													NodeInformation activeChunkServer = chunkServers.get(0);
 													
 													// update local information with new data that will be stored on this chunk server
 													HashMap<Integer, ArrayList<NodeInformation>> tempMap = new HashMap<Integer, ArrayList<NodeInformation>>();
@@ -712,14 +717,17 @@ public class Controller implements Node {
 													tempMap.put(chunkNumber, chunkServers);
 													filesWithChunksNodeInformationMap.put(filename, tempMap);
 													
-													ControllerForwardDataToNewChunkServer forwardData = new ControllerForwardDataToNewChunkServer(newChunkServer, chunkNumber, filename);
+													NodeInformation nullNode = null;
+													int totalNumberOfChunks = -1;
+													// (NodeInformation chunkServer, int chunkNumber, String filename, NodeInformation client, int totalNumberOfChunks, boolean forwardChunkToClient)
+													ControllerForwardDataToNewChunkServer forwardData = new ControllerForwardDataToNewChunkServer(newChunkServer, chunkNumber, filename, nullNode, totalNumberOfChunks, false);
 													
 													this.chunkServerNodesMap.get(activeChunkServer).sendData(forwardData.getBytes());
 												} catch (IOException e) {
 													e.printStackTrace();
 												}
 											//}
-										}
+										//}
 									}
 								}
 							}

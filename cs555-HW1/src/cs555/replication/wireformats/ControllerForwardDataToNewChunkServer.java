@@ -16,11 +16,17 @@ public class ControllerForwardDataToNewChunkServer implements Event {
 	private NodeInformation chunkServer;
 	private int chunkNumber;
 	private String filename;
+	private NodeInformation client;
+	private int totalNumberOfChunks;
+	private boolean forwardChunkToClient;
 	
-	public ControllerForwardDataToNewChunkServer(NodeInformation chunkServer, int chunkNumber, String filename) {
+	public ControllerForwardDataToNewChunkServer(NodeInformation chunkServer, int chunkNumber, String filename, NodeInformation client, int totalNumberOfChunks, boolean forwardChunkToClient) {
 		this.chunkServer = chunkServer;
 		this.chunkNumber = chunkNumber;
 		this.filename = filename;
+		this.client = client;
+		this.totalNumberOfChunks = totalNumberOfChunks;
+		this.forwardChunkToClient = forwardChunkToClient;
 	}
 	
 	/**
@@ -29,6 +35,9 @@ public class ControllerForwardDataToNewChunkServer implements Event {
 	 * chunkServer
 	 * chunkNumber
 	 * filename
+	 * client
+	 * totalNumberOfChunks
+	 * forwardChunkToClient
 	 * @throws IOException 
 	 */
 	public ControllerForwardDataToNewChunkServer(byte[] marshalledBytes) throws IOException {
@@ -58,6 +67,19 @@ public class ControllerForwardDataToNewChunkServer implements Event {
 		
 		// filename
 		this.filename = new String(filenameBytes);
+		
+		// NodeInformation
+		int clientNodeInformationLength = din.readInt();
+		byte[] clientNodeInformationBytes = new byte[clientNodeInformationLength];
+		din.readFully(clientNodeInformationBytes);
+		this.client = new NodeInformation(clientNodeInformationBytes);
+			
+		// totalNumberOfChunks
+		int totalNumberOfChunks = din.readInt();
+		this.totalNumberOfChunks = totalNumberOfChunks;
+
+		// forwardChunkToClient
+		this.forwardChunkToClient = din.readBoolean();
 		
 		baInputStream.close();
 		din.close();
@@ -90,6 +112,18 @@ public class ControllerForwardDataToNewChunkServer implements Event {
 		dout.writeInt(filenameLength);
 		dout.write(filenameBytes);
 		
+		// NodeInformation
+		byte[] clientNodeInformationBytes = this.client.getBytes();
+		int clientNodeInformationLength = clientNodeInformationBytes.length;
+		dout.writeInt(clientNodeInformationLength);
+		dout.write(clientNodeInformationBytes);
+				
+		// totalNumberOfChunks
+		dout.writeInt(this.totalNumberOfChunks);
+		
+		// forwardChunkToClient
+		dout.writeBoolean(this.forwardChunkToClient);
+		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
@@ -109,5 +143,17 @@ public class ControllerForwardDataToNewChunkServer implements Event {
 	public String getFilename() {
 		return this.filename;
 	}
-
+	
+	public NodeInformation getClient() {
+		return this.client;
+	}
+	
+	public int getTotalNumberOfChunks() {
+		return this.totalNumberOfChunks;
+	}
+	
+	public boolean getForwardChunkToClient() {
+		return forwardChunkToClient;
+	}
+	
 }

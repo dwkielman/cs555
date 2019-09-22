@@ -19,15 +19,17 @@ public class ControllerForwardOnlyFixCorruptChunkToChunkServer implements Event 
 	private String filename;
 	private int numberOfBadSlices;
 	private ArrayList<Integer> badSlices;
+	private int totalNumberOfChunks;
 	
 	public ControllerForwardOnlyFixCorruptChunkToChunkServer(NodeInformation chunkServer, int chunknumber,
-			String filename, int numberOfBadSlices, ArrayList<Integer> badSlices) {
+			String filename, int numberOfBadSlices, ArrayList<Integer> badSlices, int totalNumberOfChunks) {
 		super();
 		this.chunkServer = chunkServer;
 		this.chunknumber = chunknumber;
 		this.filename = filename;
 		this.numberOfBadSlices = numberOfBadSlices;
 		this.badSlices = badSlices;
+		this.totalNumberOfChunks = totalNumberOfChunks;
 	}
 	
 	@Override
@@ -43,6 +45,7 @@ public class ControllerForwardOnlyFixCorruptChunkToChunkServer implements Event 
 	 * filename
 	 * numberOfBadSlices
 	 * badSlices
+	 * totalNumberOfChunks
 	 * @throws IOException 
 	 */
 	public ControllerForwardOnlyFixCorruptChunkToChunkServer(byte[] marshalledBytes) throws IOException {
@@ -87,6 +90,10 @@ public class ControllerForwardOnlyFixCorruptChunkToChunkServer implements Event 
 			this.badSlices.add(badslice);
 		}
 		
+		// totalNumberOfChunks
+		int totalNumberOfChunks = din.readInt();
+		this.totalNumberOfChunks = totalNumberOfChunks;
+		
 		baInputStream.close();
 		din.close();
 	}
@@ -120,7 +127,10 @@ public class ControllerForwardOnlyFixCorruptChunkToChunkServer implements Event 
 		for (Integer i : this.badSlices) {
 			dout.writeInt(i);
 		}
-				
+		
+		// totalNumberOfChunks
+		dout.writeInt(this.totalNumberOfChunks);
+		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
@@ -147,5 +157,9 @@ public class ControllerForwardOnlyFixCorruptChunkToChunkServer implements Event 
 
 	public ArrayList<Integer> getBadSlices() {
 		return badSlices;
+	}
+	
+	public int getTotalNumberOfChunks() {
+		return this.totalNumberOfChunks;
 	}
 }

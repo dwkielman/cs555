@@ -56,7 +56,7 @@ public class EventFactory {
 					break;
 				// CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER = 6005
 				case Protocol.CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER:
-					event = new ClientChunkServerRequestToController(marshalledBytes);
+					event = new ControllerForwardDataToNewChunkServer(marshalledBytes);
 					break;
 				// CONTROLLER_FORWARD_CORRUPT_CHUNK_TO_CHUNKSERVER = 6006
 				case Protocol.CONTROLLER_FORWARD_CORRUPT_CHUNK_TO_CHUNKSERVER:
