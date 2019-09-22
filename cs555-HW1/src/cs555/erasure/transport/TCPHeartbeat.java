@@ -39,8 +39,9 @@ public class TCPHeartbeat implements Runnable {
 					int numberOfChunks = chunkServer.getNumberOfChunksStored();
 					ArrayList<Metadata> metadata = chunkServer.getFilesWithMetadataMap();
 					int numberOfMetadataFiles = metadata.size();
+					int totalNumberOfShards = chunkServer.getNumberOfShardsStored();
 					
-					ChunkServerSendMajorHeartbeatToController majorHeartbeat = new ChunkServerSendMajorHeartbeatToController(chunkServerNodeInformation, metadata, numberOfMetadataFiles, numberOfChunks, freespace);
+					ChunkServerSendMajorHeartbeatToController majorHeartbeat = new ChunkServerSendMajorHeartbeatToController(chunkServerNodeInformation, metadata, numberOfMetadataFiles, numberOfChunks, freespace, totalNumberOfShards);
 					chunkServer.getChunkServerSender().sendData(majorHeartbeat.getBytes());
 					
 					
@@ -52,8 +53,9 @@ public class TCPHeartbeat implements Runnable {
 					long freespace = chunkServer.getFreeSpaceAvailable();
 					int numberOfChunks = chunkServer.getNumberOfChunksStored();
 					int numberOfMetadataFiles = metadata.size();
+					int totalNumberOfShards = chunkServer.getNumberOfShardsStored();
 					
-					ChunkServerSendMinorHeartbeatToController minorHeartbeat = new ChunkServerSendMinorHeartbeatToController(chunkServerNodeInformation, metadata, numberOfMetadataFiles, numberOfChunks, freespace);
+					ChunkServerSendMinorHeartbeatToController minorHeartbeat = new ChunkServerSendMinorHeartbeatToController(chunkServerNodeInformation, metadata, numberOfMetadataFiles, numberOfChunks, freespace, totalNumberOfShards);
 					chunkServer.getChunkServerSender().sendData(minorHeartbeat.getBytes());
 					
 					// after sending, clear the metadata

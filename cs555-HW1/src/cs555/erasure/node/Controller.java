@@ -63,7 +63,7 @@ public class Controller implements Node {
 			this.thread = new Thread(this.tCPServerThread);
 			this.thread.start();
 			System.out.println("Controller TCPServerThread running.");
-			startHeartBeat();
+			//startHeartBeat();
 			
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -274,8 +274,9 @@ public class Controller implements Node {
 		int totalNumberOfChunks = majorHeartbeat.getTotalNumberOfChunks();
 		long freespaceAvailable = majorHeartbeat.getFreespaceAvailable();
 		ArrayList<Metadata> metadataList = majorHeartbeat.getMetadataList();
+		int totalNumberOfShards = majorHeartbeat.getTotalNumberOfShards();
 		
-		HeartbeatMetadata hbm = new HeartbeatMetadata(chunkServer, totalNumberOfChunks, freespaceAvailable);
+		HeartbeatMetadata hbm = new HeartbeatMetadata(chunkServer, totalNumberOfChunks, freespaceAvailable, totalNumberOfShards);
 		hbm.setMetadata(metadataList);
 		
 		synchronized (chunkServerHeartbeatMetadaList) {
@@ -294,8 +295,9 @@ public class Controller implements Node {
 		int totalNumberOfChunks = minorHeartbeat.getTotalNumberOfChunks();
 		long freespaceAvailable = minorHeartbeat.getFreespaceAvailable();
 		ArrayList<Metadata> metadataList = minorHeartbeat.getMetadataList();
+		int totalNumberOfShards = minorHeartbeat.getTotalNumberOfShards();
 		
-		HeartbeatMetadata hbm = new HeartbeatMetadata(chunkServer, totalNumberOfChunks, freespaceAvailable);
+		HeartbeatMetadata hbm = new HeartbeatMetadata(chunkServer, totalNumberOfChunks, freespaceAvailable, totalNumberOfShards);
 
 		synchronized (chunkServerHeartbeatMetadaList) {
 			HeartbeatMetadata storedHBM = chunkServerHeartbeatMetadaList.get(chunkServer);

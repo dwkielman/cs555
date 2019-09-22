@@ -50,7 +50,7 @@ public class Client implements Node {
 	private TCPSender controllerSender;
 	private ArrayList<byte[]> fileIntoChunks;
 	private NodeInformation clientNodeInformation;
-	private HashMap<String, HashMap<Integer, HashMap<Integer, NodeInformation>>> fileWitrhChunkNumberWithShardWithChunkServers;
+	private HashMap<String, HashMap<Integer, HashMap<Integer, NodeInformation>>> fileWithChunkNumberWithShardWithChunkServers;
 	private HashMap<Integer, byte[]> locallyStoredShardsWithBytes;
 	private HashMap<String, HashMap<Integer, byte[]>> receivedChunksMap;
 	private HashMap<String, HashMap<Integer, HashMap<Integer, NodeInformation>>> receivedFileWithChunkNumberWithShardWithChunkServers;
@@ -66,7 +66,7 @@ public class Client implements Node {
 		this.controllerNodeInformation = new NodeInformation(controllerIPAddress, controllerPortNumber);
 		this.locallyStoredShardsWithBytes = new HashMap<Integer, byte[]>();
 		this.receivedChunksMap = new HashMap<String, HashMap<Integer, byte[]>>();
-		this.fileWitrhChunkNumberWithShardWithChunkServers = new HashMap<String, HashMap<Integer, HashMap<Integer, NodeInformation>>>();
+		this.fileWithChunkNumberWithShardWithChunkServers = new HashMap<String, HashMap<Integer, HashMap<Integer, NodeInformation>>>();
 		this.receivedFileWithChunkNumberWithShardWithChunkServers = new HashMap<String, HashMap<Integer, HashMap<Integer, NodeInformation>>>();
 		this.receivedFileWithChunkNumberWithShardWithBytes = new HashMap<Integer, HashMap<Integer, byte[]>>();
 		
@@ -275,16 +275,16 @@ public class Client implements Node {
 		HashMap<Integer, NodeInformation> shardNumberWithChunkServer = clientChunkServersFromController.getShardNumberWithChunkServer();
 
 		// fileWitrhChunkNumberWithShardWithChunkServers
-		synchronized (fileWitrhChunkNumberWithShardWithChunkServers) {
-			if (!fileWitrhChunkNumberWithShardWithChunkServers.containsKey(filename)) {
+		synchronized (fileWithChunkNumberWithShardWithChunkServers) {
+			if (!fileWithChunkNumberWithShardWithChunkServers.containsKey(filename)) {
 				HashMap<Integer, HashMap<Integer, NodeInformation>> tempMap = new HashMap<Integer, HashMap<Integer, NodeInformation>>();
 				tempMap.put(chunkNumber, shardNumberWithChunkServer);
-				fileWitrhChunkNumberWithShardWithChunkServers.put(filename, tempMap);
+				fileWithChunkNumberWithShardWithChunkServers.put(filename, tempMap);
 			} else {
 				HashMap<Integer, HashMap<Integer, NodeInformation>> tempMap = new HashMap<Integer, HashMap<Integer, NodeInformation>>();
-				tempMap = fileWitrhChunkNumberWithShardWithChunkServers.get(filename);
+				tempMap = fileWithChunkNumberWithShardWithChunkServers.get(filename);
 				tempMap.put(chunkNumber, shardNumberWithChunkServer);
-				fileWitrhChunkNumberWithShardWithChunkServers.put(filename, tempMap);
+				fileWithChunkNumberWithShardWithChunkServers.put(filename, tempMap);
 			}
 		}
 		
@@ -303,9 +303,9 @@ public class Client implements Node {
 	}
 	
 	private void encodeAndProcessStoredChunks(String filename) {
-		synchronized (fileWitrhChunkNumberWithShardWithChunkServers) {
+		synchronized (fileWithChunkNumberWithShardWithChunkServers) {
 			HashMap<Integer, HashMap<Integer, NodeInformation>> chunkWithShardAndNodeInfoMap = new HashMap<Integer, HashMap<Integer, NodeInformation>>();
-			chunkWithShardAndNodeInfoMap = fileWitrhChunkNumberWithShardWithChunkServers.get(filename);
+			chunkWithShardAndNodeInfoMap = fileWithChunkNumberWithShardWithChunkServers.get(filename);
 			
 			int chunkCount = 0;
 			
@@ -388,7 +388,7 @@ public class Client implements Node {
 				chunkCount++;
 				}
 			}
-			fileWitrhChunkNumberWithShardWithChunkServers.clear();
+			fileWithChunkNumberWithShardWithChunkServers.clear();
 		}
 	}
 	

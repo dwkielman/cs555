@@ -1,12 +1,16 @@
 package cs555.erasure.node;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicLong;
 
 import cs555.erasure.transport.TCPHeartbeat;
@@ -16,9 +20,13 @@ import cs555.erasure.transport.TCPServerThread;
 import cs555.erasure.util.Metadata;
 import cs555.erasure.util.NodeInformation;
 import cs555.erasure.wireformats.ChunkServerRegisterRequestToController;
+import cs555.erasure.wireformats.ChunkServerSendChunkToClient;
+import cs555.erasure.wireformats.ClientRequestToReadFromChunkServer;
+import cs555.erasure.wireformats.ClientSendChunkToChunkServer;
 import cs555.erasure.wireformats.ControllerRegisterResponseToChunkServer;
 import cs555.erasure.wireformats.Event;
 import cs555.erasure.wireformats.Protocol;
+
 
 /**
  * Chunk Server responsible for managing file chunks. There will be one instance of the chunk
@@ -32,7 +40,7 @@ public class ChunkServer implements Node {
 	private NodeInformation controllerNodeInformation;
 	private String localHostIPAddress;
 	private int localHostPortNumber;
-	private HashMap<String, ArrayList<Integer>> filesWithChunkNumberMap;
+	private HashMap<String, HashMap<Integer, ArrayList<Integer>>> filesWithChunkNumberWithShardNumber;
 	private HashMap<String, Metadata> filesWithMetadataMap;
 	private AtomicLong localFileSize;
 	private ArrayList<Metadata> newMetadataList;
@@ -88,12 +96,24 @@ public class ChunkServer implements Node {
 	
 	public int getNumberOfChunksStored() {
 		int totalNumberOfChunks = 0;
-		synchronized (filesWithChunkNumberMap) {
-			for (ArrayList<Integer> chunkList : filesWithChunkNumberMap.values()) {
-				totalNumberOfChunks += chunkList.size();
+		synchronized (filesWithChunkNumberWithShardNumber) {
+			// (HashMap.Entry<Integer, HashMap<Integer, byte[]>> entrySet : receivedFileWithChunkNumberWithShardWithBytes.entrySet()) {
+			for (HashMap.Entry<String, HashMap<Integer, ArrayList<Integer>>> entrySet : filesWithChunkNumberWithShardNumber.entrySet()) {
+				totalNumberOfChunks += entrySet.getValue().size();
 			}
 		}
 		return totalNumberOfChunks;
+	}
+	
+	public int getNumberOfShardsStored() {
+		int totalNumberOfShards = 0;
+		synchronized (filesWithChunkNumberWithShardNumber) {
+			// (HashMap.Entry<Integer, HashMap<Integer, byte[]>> entrySet : receivedFileWithChunkNumberWithShardWithBytes.entrySet()) {
+			for (HashMap<Integer, ArrayList<Integer>> entrySet : filesWithChunkNumberWithShardNumber.values()) {
+				totalNumberOfShards += entrySet.values().size();
+			}
+		}
+		return totalNumberOfShards;
 	}
 	
 	public TCPSender getChunkServerSender() {
@@ -102,7 +122,7 @@ public class ChunkServer implements Node {
 	
 	private ChunkServer(String controllerIPAddress, int controllerPortNumber) {
 		this.controllerNodeInformation = new NodeInformation(controllerIPAddress, controllerPortNumber);
-		this.filesWithChunkNumberMap = new HashMap<String, ArrayList<Integer>>();
+		this.filesWithChunkNumberWithShardNumber = new HashMap<String, HashMap<Integer, ArrayList<Integer>>>();
 		this.filesWithMetadataMap = new HashMap<String, Metadata>();
 		this.newMetadataList = new ArrayList<Metadata>();
 		this.localFileSize = new AtomicLong(0);
@@ -141,7 +161,7 @@ public class ChunkServer implements Node {
 			case Protocol.CONTROLLER_HEARTBEAT_TO_CHUNKSERVER:
 				//if (DEBUG) { System.out.println("Heartbeat from Controller."); }
 				break;
-			/**
+				/** 
 			// CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER = 6005
 			case Protocol.CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER:
 				handleControllerForwardDataToNewChunkServer(event);
@@ -162,6 +182,7 @@ public class ChunkServer implements Node {
 			case Protocol.CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER:
 				handleChunkServerFixCorruptChunkToChunkServer(event);
 				break;
+				**/
 			// CLIENT_SEND_CHUNK_TO_CHUNKSERVER = 8002
 			case Protocol.CLIENT_SEND_CHUNK_TO_CHUNKSERVER:
 				handleChunkDataReceieved(event);
@@ -170,7 +191,6 @@ public class ChunkServer implements Node {
 			case Protocol.CLIENT_READ_REQUEST_TO_CHUNKSERVER:
 				handleClientRequestToReadFromChunkServer(event);
 				break;
-				**/
 			default:
 				System.out.println("Invalid Event to Node.");
 				return;
@@ -267,5 +287,175 @@ public class ChunkServer implements Node {
 		}
 		if (DEBUG) { System.out.println("end ChunkServer handleChunkServerRegisterResponse"); }
 	}
+	
+	// ClientSendChunkToChunkServer(byte[] chunkBytes, int chunkNumber, String filename, int shardNumber)
+	private void handleChunkDataReceieved(Event event) {
+		if (DEBUG) { System.out.println("begin ChunkServer handleChunkServerRegisterResponse"); }
+		ClientSendChunkToChunkServer chunkDataReceived = (ClientSendChunkToChunkServer) event;
+		
+		String filename = chunkDataReceived.getFilename();
+		int chunkNumber = chunkDataReceived.getChunkNumber();
+		byte[] chunkData = chunkDataReceived.getChunkBytes();
+		int shardNumber = chunkDataReceived.getShardNumber();
+		int version = 1;
+		HashMap<Integer, ArrayList<Integer>> chunksWithShardsMap = new HashMap<Integer, ArrayList<Integer>>();
+		ArrayList<Integer> shardNumbers = new ArrayList<Integer>();
+		
+		// filesWithChunkNumberWithShardNumber = new HashMap<String, HashMap<Integer, ArrayList<Integer>>>();
+		// file is not currently stored on the server, need to add it for the first time
+		synchronized (filesWithChunkNumberWithShardNumber) {
+			if (!filesWithChunkNumberWithShardNumber.containsKey(filename)) {
+				shardNumbers.add(shardNumber);
+				chunksWithShardsMap.put(chunkNumber, shardNumbers);
+				filesWithChunkNumberWithShardNumber.put(filename, chunksWithShardsMap);
+				saveFile(filename, chunkData, chunkNumber, version, shardNumber);
+			} else {
+			// file already exists on the server, could be a new chunk number or one that already exists
+				chunksWithShardsMap = filesWithChunkNumberWithShardNumber.get(filename);
+				
+				// if the chunkNumber isn't already stored, then add the new chunk data to the existing filename
+				if (!chunksWithShardsMap.containsKey(chunkNumber)) {
+					shardNumbers.add(shardNumber);
+					chunksWithShardsMap.put(chunkNumber, shardNumbers);
+					filesWithChunkNumberWithShardNumber.get(filename).putAll(chunksWithShardsMap);
+					saveFile(filename, chunkData, chunkNumber, version, shardNumber);
+				} else {
+					// make sure we have metadata for the file before trying to update it
+					shardNumbers = chunksWithShardsMap.get(chunkNumber);
+					shardNumbers.add(shardNumber);
+					chunksWithShardsMap.put(chunkNumber, shardNumbers);
+					filesWithChunkNumberWithShardNumber.get(filename).putAll(chunksWithShardsMap);
+					
+					String metadataFilename = filename + "_chunk" + chunkNumber + "_shard" + shardNumber;
+					synchronized (filesWithMetadataMap) {
+						if (filesWithMetadataMap.containsKey(metadataFilename) ) {
+							Metadata metadata = filesWithMetadataMap.get(metadataFilename);
 
+							int newVersionNumber = metadata.getVersionInfoNumber() + 1;
+							saveFile(filename, chunkData, chunkNumber, newVersionNumber, shardNumber);
+						} else {
+							saveFile(filename, chunkData, chunkNumber, version, shardNumber);
+						}
+					}
+				}
+			}
+		}
+		if (DEBUG) { System.out.println("end ChunkServer handleChunkDataReceieved"); }
+	}
+	
+	// ClientRequestToReadFromChunkServer(NodeInformation nodeInformation, int chunkNumber, String fileName, int totalNumberOfChunks, int shardNumber)
+	private void handleClientRequestToReadFromChunkServer(Event event) {
+		if (DEBUG) { System.out.println("begin ChunkServer handleClientRequestToReadFromChunkServer"); }
+		ClientRequestToReadFromChunkServer clientRequest = (ClientRequestToReadFromChunkServer) event;
+		
+		String filename = clientRequest.getFilename();
+		int chunknumber = clientRequest.getChunkNumber();
+		int totalNumberOfChunks = clientRequest.getTotalNumberOfChunks();
+		NodeInformation client = clientRequest.getClientNodeInformation();
+		int shardNumber = clientRequest.getShardNumber();
+		
+		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber  + "_shard" + shardNumber;
+		
+		File fileToReturn = new File(filelocation);
+		
+		if (fileToReturn.exists()) {
+			try {
+				RandomAccessFile raf = new RandomAccessFile(fileToReturn, "rw");
+				byte[] tempData = new byte[(int) fileToReturn.length()];
+				raf.read(tempData);
+				
+				Metadata tempMetadata = new Metadata(1, chunknumber, shardNumber);
+
+				Metadata storedMetadata = filesWithMetadataMap.get(filelocation);
+				String storedChecksum = storedMetadata.getChecksum();
+				
+				tempMetadata.generataSHA1Checksum(tempData);
+				
+				raf.close();
+				
+				if (tempMetadata.getChecksum().equals(storedChecksum)) {
+					// success, requested data is same as the one stored on this system
+
+					Socket clientServer = new Socket(client.getNodeIPAddress(), client.getNodePortNumber());
+					
+					TCPSender clientSender = new TCPSender(clientServer);
+					// ChunkServerSendChunkToClient(byte[] chunkBytes, int chunkNumber, String filename,  int totalNumberOfChunks, int shardNumber
+					ChunkServerSendChunkToClient chunkToSend = new ChunkServerSendChunkToClient(tempData, chunknumber, filename, totalNumberOfChunks, shardNumber);
+					
+					clientSender.sendData(chunkToSend.getBytes());
+					
+				} else {
+					// data has been messed with in some way
+					System.out.println("Data has been corrupted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
+				}
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		} else {
+			// chunk has been deleted, need to report it to the controller and get missing chunk
+			System.out.println("Data has been deleted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
+			synchronized (filesWithChunkNumberWithShardNumber) {
+				filesWithChunkNumberWithShardNumber.get(filename).get(chunknumber).remove(shardNumber);
+			}
+		}
+
+		if (DEBUG) { System.out.println("end ChunkServer handleClientRequestToReadFromChunkServer"); }
+	}
+	
+	private void saveFile(String fileName, byte[] chunkData, int chunkNumber, int versionNumber, int shardNumber) {
+		//String fileAbsolutePath = FILE_LOCATION + fileName;
+		String path = this.tempFileLocationReplacement + fileName + "_chunk" + chunkNumber + "_shard" + shardNumber;
+		File fileLocationToBeSaved = new File(path.substring(0, path.lastIndexOf("/")));
+		
+		if (!fileLocationToBeSaved.exists()) {
+			fileLocationToBeSaved.mkdirs();
+		}
+		
+		File fileToBeSaved = new File(path);
+		
+		try {
+			// save file to the local system
+			FileOutputStream fos = new FileOutputStream(fileToBeSaved);
+			fos.write(chunkData, 0, chunkData.length);
+			
+			this.localFileSize.getAndAdd(fileToBeSaved.length());
+			
+			System.out.println("Saving file to the following location: " + fileToBeSaved.getAbsolutePath());
+			
+			fos.close();
+			// generate metadata to write for saving in a different file
+			Metadata metadata = new Metadata(versionNumber, chunkNumber, shardNumber);
+			
+			// encrypt the data to create the checksum
+			metadata.generataSHA1Checksum(chunkData);
+			
+			String metadataFileLocation = path + ".metadata";
+			synchronized (filesWithMetadataMap) {
+				this.filesWithMetadataMap.put(path, metadata);
+			}
+			synchronized (newMetadataList) {
+				this.newMetadataList.add(metadata);
+			}
+			
+			File metadataFile = new File(metadataFileLocation);
+			
+			byte[] metadataByteToWrite = metadata.generateMetadataBytesToWrite(chunkData);
+			FileOutputStream metadataFos = new FileOutputStream(metadataFile);
+			
+			this.localFileSize.getAndAdd(metadataFile.length());
+			
+			System.out.println("Saving metadata to the following location: " + metadataFile.getAbsolutePath());
+			
+			metadataFos.write(metadataByteToWrite, 0, metadataByteToWrite.length);
+			metadataFos.close();
+		} catch (FileNotFoundException e) {
+			System.out.println("ChunkServer: Error in saveFile: File location not found.");
+			e.printStackTrace();
+		} catch (IOException e) {
+			System.out.println("ChunkServer: Error in saveFile: Writing file failed.");
+			e.printStackTrace();
+		}
+	}
 }

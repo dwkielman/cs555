@@ -8,12 +8,14 @@ public class HeartbeatMetadata {
 	private int totalNumberOfChunks;
 	private long freeSpaceAvailable;
 	private ArrayList<Metadata> metadataList;
+	private int totalNumberOfShards;
 	
-	public HeartbeatMetadata(NodeInformation nodeInformation, int totalNumberOfChunks, long freeSpaceAvailable) {
+	public HeartbeatMetadata(NodeInformation nodeInformation, int totalNumberOfChunks, long freeSpaceAvailable, int totalNumberOfShards) {
 		this.nodeInformation = nodeInformation;
 		this.totalNumberOfChunks = totalNumberOfChunks;
 		this.freeSpaceAvailable = freeSpaceAvailable;
 		this.metadataList = new ArrayList<Metadata>();
+		this.totalNumberOfShards = totalNumberOfShards;
 	}
 	
 	public NodeInformation getNodeInformation() {
@@ -55,4 +57,11 @@ public class HeartbeatMetadata {
 		return this.metadataList;
 	}
 	
+	public int getTotalNumberOfShards() {
+		return totalNumberOfShards;
+	}
+	
+	public void setTotalNumberOfShards(int totalNumberOfShards) {
+		this.totalNumberOfShards = totalNumberOfShards;
+	}
 }

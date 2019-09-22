@@ -20,14 +20,16 @@ public class ChunkServerSendMajorHeartbeatToController implements Event {
 	private int numberOfMetadataFiles;
 	private int totalNumberOfChunks;
 	private long freespaceAvailable;
+	private int totalNumberOfShards;
 	
 	public ChunkServerSendMajorHeartbeatToController(NodeInformation chunkServer, ArrayList<Metadata> metadataList,
-			int numberOfMetadataFiles, int totalNumberOfChunks, long freespaceAvailable) {
+			int numberOfMetadataFiles, int totalNumberOfChunks, long freespaceAvailable, int totalNumberOfShards) {
 		this.chunkServer = chunkServer;
 		this.metadataList = metadataList;
 		this.numberOfMetadataFiles = numberOfMetadataFiles;
 		this.totalNumberOfChunks = totalNumberOfChunks;
 		this.freespaceAvailable = freespaceAvailable;
+		this.totalNumberOfShards = totalNumberOfShards;
 	}
 	
 	@Override
@@ -43,6 +45,7 @@ public class ChunkServerSendMajorHeartbeatToController implements Event {
 	 * metadataList
 	 * totalNumberOfChunks
 	 * freespaceAvailable
+	 * totalNumberOfShards
 	 * @throws IOException 
 	 */
 	public ChunkServerSendMajorHeartbeatToController(byte[] marshalledBytes) throws IOException {
@@ -85,7 +88,11 @@ public class ChunkServerSendMajorHeartbeatToController implements Event {
 		// freespaceAvailable
 		long freespaceAvailable = din.readLong();
 		this.freespaceAvailable = freespaceAvailable;
-				
+		
+		// totalNumberOfShards
+		int totalNumberOfShards = din.readInt();
+		this.totalNumberOfShards = totalNumberOfShards;
+		
 		baInputStream.close();
 		din.close();
 	}
@@ -121,6 +128,9 @@ public class ChunkServerSendMajorHeartbeatToController implements Event {
 		// freespaceAvailable
 		dout.writeLong(this.freespaceAvailable);
 		
+		// totalNumberOfShards
+		dout.writeInt(this.totalNumberOfShards);
+		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
@@ -147,5 +157,9 @@ public class ChunkServerSendMajorHeartbeatToController implements Event {
 
 	public long getFreespaceAvailable() {
 		return freespaceAvailable;
+	}
+	
+	public int getTotalNumberOfShards() {
+		return totalNumberOfShards;
 	}
 }
