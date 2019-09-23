@@ -403,7 +403,7 @@ public class Controller implements Node {
 					// get the chunk servers associated with the file
 					ArrayList<NodeInformation> chunkServers = new ArrayList<NodeInformation>();
 					
-					System.out.println("Attempting to get " + filename + " with Chunk " + chunkNumber + "From chunk server in the map."); 
+					System.out.println("Attempting to get " + filename + " with Chunk " + chunkNumber + " From chunk server in the map."); 
 					
 					chunkServers = filesWithChunksNodeInformationMap.get(filename).get(chunkNumber);
 					int totalNumberOfFiles = filesWithChunksNodeInformationMap.get(filename).size();
@@ -684,6 +684,11 @@ public class Controller implements Node {
 								if (chunkServers.contains(deadChunkServer)) {
 									chunkServers.remove(deadChunkServer);
 									
+									if (this.chunkServerHeartbeatMetadaList.containsKey(deadChunkServer)) {
+										this.chunkServerHeartbeatMetadaList.remove(deadChunkServer);
+									}
+									
+									// sort available chunk servers by their free space
 									ArrayList<HeartbeatMetadata> tempHbmList = new ArrayList<HeartbeatMetadata>();
 									for (HeartbeatMetadata hbm : this.chunkServerHeartbeatMetadaList.values()) {
 										tempHbmList.add(hbm);
@@ -709,16 +714,24 @@ public class Controller implements Node {
 													
 													// update local information with new data that will be stored on this chunk server
 													HashMap<Integer, ArrayList<NodeInformation>> tempMap = new HashMap<Integer, ArrayList<NodeInformation>>();
+													tempMap = filesWithChunksNodeInformationMap.get(filename);
 													chunkServers.add(newChunkServer);
 													tempMap.put(chunkNumber, chunkServers);
 													filesWithChunksNodeInformationMap.put(filename, tempMap);
 													
+													System.out.println("Current map of filenames and the chunk servers that store the data:");
+													System.out.println(filesWithChunksNodeInformationMap.toString());
+													
 													NodeInformation nullNode = null;
 													int totalNumberOfChunks = -1;
 													// (NodeInformation chunkServer, int chunkNumber, String filename, NodeInformation client, int totalNumberOfChunks, boolean forwardChunkToClient)
-													ControllerForwardDataToNewChunkServer forwardData = new ControllerForwardDataToNewChunkServer(newChunkServer, chunkNumber, filename, nullNode, totalNumberOfChunks, false);
+													ControllerForwardDataToNewChunkServer forwardData = new ControllerForwardDataToNewChunkServer(newChunkServer, chunkNumber, filename, activeChunkServer, totalNumberOfChunks, false);
 													
-													this.chunkServerNodesMap.get(activeChunkServer).sendData(forwardData.getBytes());
+													System.out.println("Getting data from " + activeChunkServer.getNodeIPAddress());
+													System.out.println("Setting " + newChunkServer.getNodeIPAddress() + " as the new host for this data.");
+													synchronized (chunkServerNodesMap) {
+														this.chunkServerNodesMap.get(activeChunkServer).sendData(forwardData.getBytes());
+													}
 												} catch (IOException e) {
 													e.printStackTrace();
 												}

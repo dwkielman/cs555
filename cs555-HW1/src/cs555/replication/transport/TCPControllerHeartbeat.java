@@ -41,6 +41,8 @@ public class TCPControllerHeartbeat implements Runnable {
 							} catch (Exception e) {
 								System.out.println("ERROR: Chunk Server not responding. Adding to dead chunk servers in Controller.");
 								controller.updateDeadChunkServers(chunkServer);
+								chunkServersToCheck.remove(chunkServer);
+								break;
 							}
 						}
 					} else {
@@ -48,9 +50,8 @@ public class TCPControllerHeartbeat implements Runnable {
 					}
 				}
 			} catch (Exception e) {
+				System.out.println("Unexpected exception in TCPControllerHeartbeat");
 				e.printStackTrace();
-			} finally {
-				
 			}
 		}
 	}
