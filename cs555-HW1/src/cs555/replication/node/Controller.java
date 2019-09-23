@@ -415,7 +415,7 @@ public class Controller implements Node {
 					// get the first chunk server stored and try that one
 					if (!chunkServers.isEmpty()) {
 						ControllerChunkServerToReadResponseToClient controllerReponse = new ControllerChunkServerToReadResponseToClient(chunkServers.get(0), chunkNumber, filename, totalNumberOfFiles);
-						
+						System.out.println("Telling Client to get chunk from: " + chunkServers.get(0).getNodeIPAddress());
 						System.out.println("About to send a Client Read Request (Read Request type: " + controllerReponse.getType()  + ") to: " + clientNode.getNodeIPAddress());
 						if (clientNodesMap.containsKey(clientNode)) {
 							TCPSender sender = clientNodesMap.get(clientNode);

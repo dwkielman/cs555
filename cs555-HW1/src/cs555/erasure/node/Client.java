@@ -12,7 +12,6 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.Map.Entry;
 import java.util.Scanner;
 
 import cs555.erasure.transport.TCPReceiverThread;
@@ -177,6 +176,7 @@ public class Client implements Node {
 						if (file.exists()) {
 							this.fileIntoChunks = splitFileIntoBytes(file);
 							int numberOfChunks = fileIntoChunks.size();
+							System.out.println("Sending a total number of chunks for the split file: " + numberOfChunks);
 							int chunkNumber = 0;
 							sendClientChunkServerRequestToController(chunkNumber, filename, numberOfChunks);
 						} else {
@@ -288,11 +288,14 @@ public class Client implements Node {
 			}
 		}
 		
-		if (chunkNumber == totalNumberOfChunks) {
+		System.out.println("Finished processing chunk number " + chunkNumber + " out of " + totalNumberOfChunks + " total chunks");
+		if (chunkNumber == (totalNumberOfChunks - 1)) {
+			System.out.println("Sending chunks to chunk servers now.");
 			encodeAndProcessStoredChunks(filename);
 		} else {
 			try {
 				chunkNumber++;
+				System.out.println("About to request chunk number " + chunkNumber + " out of " + totalNumberOfChunks + " total chunks");
 				ClientChunkServerRequestToController chunkServersRequest = new ClientChunkServerRequestToController(chunkNumber, this.clientNodeInformation, totalNumberOfChunks, filename);
 				this.controllerSender.sendData(chunkServersRequest.getBytes());
 			} catch (IOException ioe) {
@@ -388,6 +391,7 @@ public class Client implements Node {
 				chunkCount++;
 				}
 			}
+			System.out.println("Processing chunks completed.");
 			fileWithChunkNumberWithShardWithChunkServers.clear();
 		}
 	}
@@ -468,6 +472,8 @@ public class Client implements Node {
 			// need to check if we have all the shards for this chunk before moving on to the next chunk
 			int numberOfShards = this.receivedFileWithChunkNumberWithShardWithBytes.get(chunkNumber).size();
 			
+			System.out.println("For Chunk " + chunkNumber + " have received " + numberOfShards + " number of shards thus far.");
+			
 			if (numberOfShards == TOTAL_SHARDS) {
 				// received all shards for this chunk, need to ensure that we have all of the chunks associated with this file before merging
 				int numberOfReceivedChunks = this.receivedFileWithChunkNumberWithShardWithBytes.size();
@@ -520,17 +526,19 @@ public class Client implements Node {
 				
 				int shardSize = 0;
 				int shardCount = 0;
-				//int shardNumber = 1;
+				//int shardNumber = 0;
 				
 				// now read the shards from the persistance store
-				for (Integer shardNumber : tempChunkWithBytes.keySet()) {
-					byte[] tempReceivedBytes = tempChunkWithBytes.get(shardNumber);
+				//for (Integer shardNumber : tempChunkWithBytes.keySet()) {
+				for (int i = 0; i < TOTAL_SHARDS; i++) {
+					
+					byte[] tempReceivedBytes = tempChunkWithBytes.get(i + 1);
 					
 					// Check if the shard is available.
 					// If available, read its content into shards[i]
 					// set shardPresent[i] = true and increase the shardCount by 1.
-					shards[shardNumber] = tempReceivedBytes;
-                    shardPresent[shardNumber] = true;
+					shards[i] = tempReceivedBytes;
+                    shardPresent[i] = true;
                     shardCount++;
                     shardSize = tempReceivedBytes.length;
 				}

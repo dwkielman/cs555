@@ -193,7 +193,7 @@ public class Controller implements Node {
 		System.out.println("Controller received a chunkServerRegisterRequest from IP: " + IP + " on Port: " + String.valueOf(port) + ".");
 		
 		NodeInformation ni = new NodeInformation(IP, port);
-		//HeartbeatMetadata hbm = new HeartbeatMetadata(ni, 0, nodeFreeSpace);
+		HeartbeatMetadata hbm = new HeartbeatMetadata(ni, 0, nodeFreeSpace, 0);
 
 		try {
 			Socket socket = new Socket(IP, port);
@@ -206,7 +206,7 @@ public class Controller implements Node {
 			synchronized (chunkServerNodesMap) {
 				if (!this.chunkServerNodesMap.containsKey(ni)) {
 					this.chunkServerNodesMap.put(ni, sender);
-					//this.chunkServerHeartbeatMetadaList.put(ni, hbm);
+					this.chunkServerHeartbeatMetadaList.put(ni, hbm);
 					this.tempLiveNodes.add(ni);
 					System.out.println("Chunk Server Registration request successful. The number of Chunk Servers currently running on the Controller is (" + this.chunkServerNodesMap.size() + ")");
 					status = (byte) 1;
@@ -321,7 +321,7 @@ public class Controller implements Node {
 		int chunkNumber = clientChunkServerRequest.getChunkNumber();
 		String filename = clientChunkServerRequest.getFilename();
 		int totalNumberOfChunks = clientChunkServerRequest.getTotalNumberOfChunks();
-		
+		System.out.println("Chunk Number: " + chunkNumber + ", total number of chunks: " + totalNumberOfChunks);
 		if (DEBUG) { System.out.println("Controller received a message type: " + clientChunkServerRequest.getType()); }
 
 		if (chunkServerHeartbeatMetadaList.size() >= TOTAL_SHARDS) {

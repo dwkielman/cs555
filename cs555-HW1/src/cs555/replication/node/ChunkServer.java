@@ -497,7 +497,7 @@ public class ChunkServer implements Node {
 							if (!storedChecksumEntries[i].equals(tempChecksumEntries[i])) {
 								badSlices.add(i);
 								// once the bad slice has been found, all subsequent lines will be corrupt also and need to simply be replaced. temp is too large so don't loop on that
-								for (int j = i; j < storedChecksumEntriesLength; j++) {
+								for (int j = (i + 1); j < storedChecksumEntriesLength; j++) {
 									badSlices.add(j);
 								}
 								break;

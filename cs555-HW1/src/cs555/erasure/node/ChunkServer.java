@@ -136,7 +136,7 @@ public class ChunkServer implements Node {
 			if (DEBUG) { System.out.println("My server port number is: " + this.localHostPortNumber); }
 			
 			this.localHostIPAddress = InetAddress.getLocalHost().getCanonicalHostName();
-			this.localFilePath = "/" + InetAddress.getLocalHost().getHostName() + "/tmp/data/";
+			this.localFilePath = InetAddress.getLocalHost().getHostName() + "/tmp/data/";
 			this.tempFileLocationReplacement = FILE_LOCATION + this.localFilePath;
 			
 			if (DEBUG) { System.out.println("My host IP Address is: " + this.localHostIPAddress); }
@@ -358,6 +358,8 @@ public class ChunkServer implements Node {
 		
 		File fileToReturn = new File(filelocation);
 		
+		System.out.println("Request to get file: " + filelocation);
+		
 		if (fileToReturn.exists()) {
 			try {
 				RandomAccessFile raf = new RandomAccessFile(fileToReturn, "rw");
@@ -396,9 +398,14 @@ public class ChunkServer implements Node {
 		} else {
 			// chunk has been deleted, need to report it to the controller and get missing chunk
 			System.out.println("Data has been deleted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
-			synchronized (filesWithChunkNumberWithShardNumber) {
-				filesWithChunkNumberWithShardNumber.get(filename).get(chunknumber).remove(shardNumber);
-			}
+			
+			System.out.println("Metadata files stored in memory: " + filesWithMetadataMap.toString());
+			System.out.println("Filename requested: " + filename);
+			System.out.println("Chunk number requested: " + chunknumber);
+			System.out.println("Shard number requested: " + shardNumber);
+			//synchronized (filesWithChunkNumberWithShardNumber) {
+				//filesWithChunkNumberWithShardNumber.get(filename).get(chunknumber).remove(shardNumber);
+			//}
 		}
 
 		if (DEBUG) { System.out.println("end ChunkServer handleClientRequestToReadFromChunkServer"); }
