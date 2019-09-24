@@ -37,6 +37,7 @@ public class ControllerChunkServersResponseToClient implements Event {
 	 * chunkNumber
 	 * totalNumberOfChunks
 	 * filename
+	 * isCorrupt
 	 * @throws IOException 
 	 */
 	public ControllerChunkServersResponseToClient(byte[] marshalledBytes) throws IOException {
@@ -83,7 +84,7 @@ public class ControllerChunkServersResponseToClient implements Event {
 		
 		// filename
 		this.filename = new String(filenameBytes);
-
+		
 		baInputStream.close();
 		din.close();
 	}
@@ -125,7 +126,7 @@ public class ControllerChunkServersResponseToClient implements Event {
 		int filenameLength = filenameBytes.length;
 		dout.writeInt(filenameLength);
 		dout.write(filenameBytes);
-
+		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();

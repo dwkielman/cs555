@@ -191,29 +191,6 @@ public class Client implements Node {
 	            		if (DEBUG) { System.out.println("User selected Quit."); }
 	            		System.out.println("Quitting program. Goodbye.");
 	            		System.exit(1);
-	            	case "T":
-	            		if (DEBUG) { System.out.println("Testing features. Testing reading a file first. Enter file name:"); }
-	            		
-	            		String currentDirectory = System.getProperty("user.dir");
-	            	    System.out.println("The current working directory is " + currentDirectory);
-	            	    String currentUser = System.getProperty("user.name");
-	            	    System.out.println("The current user on this system is " + currentUser);
-	            	    
-	            	    long space = new File(currentDirectory).getFreeSpace();
-	            	    
-	            	    System.out.println("The space available on this comptuer is: " + space);
-	            	    
-	            		String filename2;
-	            		System.out.println("Enter the name of the file that you wish to store: ");
-						filename2 = scan.nextLine();
-						Path path = Paths.get(String.format("./%s", filename2));
-						File file2 = path.toFile();
-						if (file2.exists()) {
-							System.out.println("File Found. Good job Daniel.");
-						} else {
-							System.out.println("File does not exist. Please try again.");
-						}
-	            		break;
 	            	default:
 	            		System.out.println("Command unrecognized. Please enter a valid input.");
 	            }
@@ -286,9 +263,7 @@ public class Client implements Node {
 		
 		try {
 			ClientReadFileRequestToController readRequest = new ClientReadFileRequestToController(this.clientNodeInformation, filename, chunkNumber);
-			
-			System.out.println("Telling the Controller to send the file to: " + this.clientNodeInformation.getNodeIPAddress());
-			
+
 			this.controllerSender.sendData(readRequest.getBytes());
 			
 		} catch (IOException ioe) {
@@ -367,7 +342,7 @@ public class Client implements Node {
 		} catch (IOException ioe) {
 			ioe.printStackTrace();
 		}
-		// receivedChunksMap
+		
 		if (DEBUG) { System.out.println("end Client handleControllerChunkServerToReadResponseToClient"); }
 	}
 	
@@ -383,7 +358,7 @@ public class Client implements Node {
 
 		HashMap<Integer, byte[]> chunkWithBytes = new HashMap<Integer, byte[]>();
 
-		System.out.println("Storing Filename: " + filename + " with chunk number: " + chunkNumber);
+		if (DEBUG) { System.out.println("Storing Filename: " + filename + " with chunk number: " + chunkNumber); }
 		
 		synchronized (this.receivedChunksMap) {
 			
@@ -396,8 +371,10 @@ public class Client implements Node {
 				this.receivedChunksMap.put(filename, tempChunkWithBytes);
 			}
 
-			System.out.println("The size of receivedChunksMap for this file is: " + this.receivedChunksMap.get(filename).size());
-			System.out.println("Total number of chunks expecting: " + totalNumberOfChunks);
+			if (DEBUG) { 
+				System.out.println("The size of receivedChunksMap for this file is: " + this.receivedChunksMap.get(filename).size());
+				System.out.println("Total number of chunks expecting: " + totalNumberOfChunks);
+			}
 			if (this.receivedChunksMap.get(filename).size() == totalNumberOfChunks) {
 				// file is complete, put together and build
 				mergeFile(filename);
@@ -450,14 +427,23 @@ public class Client implements Node {
 	}
 	
 	private void mergeFile(String filename) {
-		String path = System.getProperty("user.dir") + "/tmp/received/";
+		//String path = System.getProperty("user.dir") + "/tmp/received/";
+		
+		String path = "/tmp/received_dkielman/";
 		File pathFile = new File(path);
 		if (!pathFile.exists()) {
 			pathFile.mkdir();
 		}
 		
-		String receivedFilePath = path + filename;
+		String receivedFileName = filename.substring(filename.lastIndexOf("/") + 1, filename.length());
 		
+		System.out.println("Attemping to write to the following directory:");
+		System.out.println(path);
+		
+		//String receivedFilePath = path + filename;
+		String receivedFilePath = path + receivedFileName;
+		System.out.println("Received Path is as follows: ");
+		System.out.println(receivedFilePath);
 		File receivedFile = new File(receivedFilePath);
 		try {
 			if (!receivedFile.exists()) {

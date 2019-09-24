@@ -54,6 +54,7 @@ public class Client implements Node {
 	private HashMap<String, HashMap<Integer, byte[]>> receivedChunksMap;
 	private HashMap<String, HashMap<Integer, HashMap<Integer, NodeInformation>>> receivedFileWithChunkNumberWithShardWithChunkServers;
 	private HashMap<Integer, HashMap<Integer, byte[]>> receivedFileWithChunkNumberWithShardWithBytes;
+	private HashMap<Integer, Boolean> isCorruptMap;
 	private static final int DATA_SHARDS = 6;
 	private static final int PARITY_SHARDS = 3;
 	private static final int TOTAL_SHARDS = 9;
@@ -68,6 +69,7 @@ public class Client implements Node {
 		this.fileWithChunkNumberWithShardWithChunkServers = new HashMap<String, HashMap<Integer, HashMap<Integer, NodeInformation>>>();
 		this.receivedFileWithChunkNumberWithShardWithChunkServers = new HashMap<String, HashMap<Integer, HashMap<Integer, NodeInformation>>>();
 		this.receivedFileWithChunkNumberWithShardWithBytes = new HashMap<Integer, HashMap<Integer, byte[]>>();
+		this.isCorruptMap = new HashMap<Integer, Boolean>();
 		
 		try {
 			TCPServerThread serverThread = new TCPServerThread(0, this);
@@ -454,7 +456,8 @@ public class Client implements Node {
 		String filename = chunksReceived.getFilename();
 		int shardNumber = chunksReceived.getShardNumber();
 		int totalNumberOfChunks = chunksReceived.getTotalNumberOfChunks();
-
+		Boolean isNotCorrupted = chunksReceived.getIsNotCorrupted();
+		
 		HashMap<Integer, byte[]> shardWithBytes = new HashMap<Integer, byte[]>();
 
 		System.out.println("Storing Filename: " + filename + " with chunk number: " + chunkNumber + " from shard number " + shardNumber);
@@ -463,10 +466,12 @@ public class Client implements Node {
 		synchronized (receivedFileWithChunkNumberWithShardWithBytes) {
 			if (!this.receivedFileWithChunkNumberWithShardWithBytes.containsKey(chunkNumber)) {
 				shardWithBytes.put(shardNumber, chunkData);
+				this.isCorruptMap.put(shardNumber, isNotCorrupted);
 				this.receivedFileWithChunkNumberWithShardWithBytes.put(chunkNumber, shardWithBytes);
 			} else {
 				HashMap<Integer, byte[]> tempChunkWithBytes = this.receivedFileWithChunkNumberWithShardWithBytes.get(chunkNumber);
 				tempChunkWithBytes.put(shardNumber, chunkData);
+				this.isCorruptMap.put(shardNumber, isNotCorrupted);
 				this.receivedFileWithChunkNumberWithShardWithBytes.put(chunkNumber, tempChunkWithBytes);
 			}
 			// need to check if we have all the shards for this chunk before moving on to the next chunk
@@ -532,13 +537,15 @@ public class Client implements Node {
 				//for (Integer shardNumber : tempChunkWithBytes.keySet()) {
 				for (int i = 0; i < TOTAL_SHARDS; i++) {
 					
+					boolean isNotCorrupted = this.isCorruptMap.get(i + 1);
 					byte[] tempReceivedBytes = tempChunkWithBytes.get(i + 1);
 					
 					// Check if the shard is available.
 					// If available, read its content into shards[i]
 					// set shardPresent[i] = true and increase the shardCount by 1.
 					shards[i] = tempReceivedBytes;
-                    shardPresent[i] = true;
+                    //shardPresent[i] = true;
+					shardPresent[i] = isNotCorrupted;
                     shardCount++;
                     shardSize = tempReceivedBytes.length;
 				}

@@ -16,13 +16,15 @@ public class ChunkServerSendChunkToClient implements Event {
 	private int shardNumber;
 	private String filename;
 	private int totalNumberOfChunks;
+	private boolean isNotCorrupted;
 	
-	public ChunkServerSendChunkToClient(byte[] chunkBytes, int chunkNumber, String filename,  int totalNumberOfChunks, int shardNumber) {
+	public ChunkServerSendChunkToClient(byte[] chunkBytes, int chunkNumber, String filename,  int totalNumberOfChunks, int shardNumber, boolean isNotCorrupted) {
 		this.chunkBytes = chunkBytes;
 		this.chunkNumber = chunkNumber;
 		this.filename = filename;
 		this.totalNumberOfChunks = totalNumberOfChunks;
 		this.shardNumber = shardNumber;
+		this.isNotCorrupted = isNotCorrupted;
 	}
 	
 	/**
@@ -33,6 +35,7 @@ public class ChunkServerSendChunkToClient implements Event {
 	 * filename
 	 * totalNumberOfChunks
 	 * shardNumber
+	 * isNotCorrupted
 	 * @throws IOException 
 	 */
 	public ChunkServerSendChunkToClient(byte[] marshalledBytes) throws IOException {
@@ -73,6 +76,9 @@ public class ChunkServerSendChunkToClient implements Event {
 
 		this.shardNumber = shardNumber;
 		
+		// isNotCorrupted
+		this.isNotCorrupted = din.readBoolean();
+		
 		baInputStream.close();
 		din.close();
 	}
@@ -109,6 +115,9 @@ public class ChunkServerSendChunkToClient implements Event {
 		// shardNumber
 		dout.writeInt(this.shardNumber);
 		
+		// isNotCorrupted
+		dout.writeBoolean(this.isNotCorrupted);
+		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
@@ -137,4 +146,7 @@ public class ChunkServerSendChunkToClient implements Event {
 		return this.shardNumber;
 	}
 
+	public boolean getIsNotCorrupted() {
+		return isNotCorrupted;
+	}
 }

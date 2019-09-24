@@ -360,6 +360,8 @@ public class ChunkServer implements Node {
 		
 		System.out.println("Request to get file: " + filelocation);
 		
+		Boolean isCorrupt = true;
+		
 		if (fileToReturn.exists()) {
 			try {
 				RandomAccessFile raf = new RandomAccessFile(fileToReturn, "rw");
@@ -375,6 +377,18 @@ public class ChunkServer implements Node {
 				
 				raf.close();
 				
+				if (!tempMetadata.getChecksum().equals(storedChecksum)) {
+					System.out.println("Data has been corrupted, Marking Shard as corrupted.");
+					isCorrupt = false;
+				}
+				Socket clientServer = new Socket(client.getNodeIPAddress(), client.getNodePortNumber());
+				
+				TCPSender clientSender = new TCPSender(clientServer);
+				// ChunkServerSendChunkToClient(byte[] chunkBytes, int chunkNumber, String filename,  int totalNumberOfChunks, int shardNumber
+				ChunkServerSendChunkToClient chunkToSend = new ChunkServerSendChunkToClient(tempData, chunknumber, filename, totalNumberOfChunks, shardNumber, isCorrupt);
+				
+				clientSender.sendData(chunkToSend.getBytes());
+				/**
 				if (tempMetadata.getChecksum().equals(storedChecksum)) {
 					// success, requested data is same as the one stored on this system
 
@@ -382,7 +396,7 @@ public class ChunkServer implements Node {
 					
 					TCPSender clientSender = new TCPSender(clientServer);
 					// ChunkServerSendChunkToClient(byte[] chunkBytes, int chunkNumber, String filename,  int totalNumberOfChunks, int shardNumber
-					ChunkServerSendChunkToClient chunkToSend = new ChunkServerSendChunkToClient(tempData, chunknumber, filename, totalNumberOfChunks, shardNumber);
+					ChunkServerSendChunkToClient chunkToSend = new ChunkServerSendChunkToClient(tempData, chunknumber, filename, totalNumberOfChunks, shardNumber, isCorrupt);
 					
 					clientSender.sendData(chunkToSend.getBytes());
 					
@@ -390,6 +404,7 @@ public class ChunkServer implements Node {
 					// data has been messed with in some way
 					System.out.println("Data has been corrupted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
 				}
+				**/
 			} catch (FileNotFoundException e) {
 				e.printStackTrace();
 			} catch (IOException e) {

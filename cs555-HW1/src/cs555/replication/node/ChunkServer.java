@@ -131,8 +131,12 @@ public class ChunkServer implements Node {
 			if (DEBUG) { System.out.println("My server port number is: " + this.localHostPortNumber); }
 			
 			this.localHostIPAddress = InetAddress.getLocalHost().getCanonicalHostName();
-			this.localFilePath = "/" + InetAddress.getLocalHost().getHostName() + "/tmp/data/";
+			this.localFilePath = InetAddress.getLocalHost().getHostName() + "/tmp/data/";
 			this.tempFileLocationReplacement = FILE_LOCATION + this.localFilePath;
+			this.tempFileLocationReplacement = "/tmp/stored_dkielman/";
+			System.out.println("Data will be stored at: " + this.tempFileLocationReplacement);
+			// DKIELMAN
+			
 			
 			if (DEBUG) { System.out.println("My host IP Address is: " + this.localHostIPAddress); }
 		} catch (UnknownHostException uhe) {
@@ -309,7 +313,9 @@ public class ChunkServer implements Node {
 				} else {
 					// make sure that the timestamp is more recent than the one that is currently stored on the server
 					// make sure we have metadata for the file before trying to update it
-					String metadataFilename = filename + "_chunk" + chunkNumber;
+					//String metadataFilename = filename + "_chunk" + chunkNumber; DKIELMAN
+					int filenameChunkNumber = chunkNumber + 1;
+					String metadataFilename = filename + "_chunk" + filenameChunkNumber;
 					synchronized (filesWithMetadataMap) {
 						if (filesWithMetadataMap.containsKey(metadataFilename) ) {
 							Metadata metadata = filesWithMetadataMap.get(metadataFilename);
@@ -398,7 +404,9 @@ public class ChunkServer implements Node {
 				} else {
 					// make sure that the timestamp is more recent than the one that is currently stored on the server
 					// make sure we have metadata for the file before trying to update it
-					String metadataFilename = filename + "_chunk" + chunkNumber;
+					// String metadataFilename = filename + "_chunk" + chunkNumber; DKIELMAN
+					int filenameChunkNumber = chunkNumber + 1;
+					String metadataFilename = filename + "_chunk" + filenameChunkNumber;
 					synchronized (filesWithMetadataMap) {
 						if (filesWithMetadataMap.containsKey(metadataFilename) ) {
 							Metadata metadata = filesWithMetadataMap.get(metadataFilename);
@@ -430,7 +438,9 @@ public class ChunkServer implements Node {
 		int totalNumberOfChunks = clientRequest.getTotalNumberOfChunks();
 		NodeInformation client = clientRequest.getClientNodeInformation();
 		
-		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
+		//String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber; DKIELMAN
+		int filenameChunkNumber = chunknumber + 1;
+		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + filenameChunkNumber;
 		
 		File fileToReturn = new File(filelocation);
 		
@@ -547,7 +557,10 @@ public class ChunkServer implements Node {
 		int totalNumberOfChunks = forwardData.getTotalNumberOfChunks();
 		boolean forwardChunkToClient = forwardData.getForwardChunkToClient();
 		
-		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
+		// String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber; DKIELMAN
+		int filenameChunkNumber = chunknumber + 1;
+		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + filenameChunkNumber;
+		
 		
 		File fileToReturn = new File(filelocation);
 		
@@ -669,7 +682,9 @@ public class ChunkServer implements Node {
 		int chunknumber = fixCorrupt.getChunknumber();
 		String filename = fixCorrupt.getFilename();
 		NodeInformation client = fixCorrupt.getClient();
-		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
+		//String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber; DKIELMAN
+		int filenameChunkNumber = chunknumber + 1;
+		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + filenameChunkNumber;
 		int totalNumberOfChunks = fixCorrupt.getTotalNumberOfChunks();
 		boolean forwardChunkToClient = fixCorrupt.getForwardChunkToClient();
 
@@ -741,7 +756,6 @@ public class ChunkServer implements Node {
 						}
 					}
 					
-					//int numberOfDataStored = tempData.length;
 					int numberOfDataStored = storedChecksum.split("\n").length;
 					
 					long timestamp = fileToReturn.lastModified();
@@ -831,8 +845,9 @@ public class ChunkServer implements Node {
 		String filename = fixCorrupt.getFilename();
 		int totalNumberOfChunks = fixCorrupt.getTotalNumberOfChunks();
 		
-		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
-		
+		// String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber; DKIELMAN
+		int filenameChunkNumber = chunknumber + 1;
+		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + filenameChunkNumber;
 		File fileToReturn = new File(filelocation);
 		
 		if (fileToReturn.exists()) {
@@ -864,7 +879,6 @@ public class ChunkServer implements Node {
 					int index = 0;
 					int sliceCount = 1;
 					for (Integer i : badslices) {
-						//if (i < tempData.length) {
 						if ((sliceCount * SIZE_OF_SLICE) < tempData.length) {
 							System.out.println("Standard Slice Size corruption fix.");
 							int dataIndex = i * SIZE_OF_SLICE;
@@ -876,8 +890,6 @@ public class ChunkServer implements Node {
 							}
 							index = lastLoopIndex + 1;
 							sliceCount++;
-							//fixedSlices[index] = tempData[i];
-							//index ++;
 						} else {
 							System.out.println("Stub Slice Size corruption fix.");
 							// non-standard slice length, need to calculate how many bytes to write without going out of bounds
@@ -890,7 +902,6 @@ public class ChunkServer implements Node {
 						}
 					}
 					
-					//int numberOfDataStored = tempData.length;
 					int numberOfDataStored = storedChecksum.split("\n").length;
 					
 					long timestamp = fileToReturn.lastModified();
@@ -986,8 +997,9 @@ public class ChunkServer implements Node {
 		ArrayList<Integer> badslices = fixedChunk.getBadSlices();
 		int numberOfDataStored = fixedChunk.getNumberOfDataStored();
 		
-		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber;
-		
+		//String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber; DKIELMAN
+		int filenameChunkNumber = chunknumber + 1;
+		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + filenameChunkNumber;
 		File fileToReturn = new File(filelocation);
 		
 		if (fileToReturn.exists()) {
@@ -1054,17 +1066,7 @@ public class ChunkServer implements Node {
 						}
 					}
 				}
-				/**
-				for (int i = 0; i < numberOfDataStored; i++) {
-					if (badslices.contains(i)) {
-						combinedBytes[i] = fixedBytes[fixedBytesCounter];
-						fixedBytesCounter++;
-					} else {
-						combinedBytes[i] = tempData[tempBytesCounter];
-						tempBytesCounter++;
-					}
-				}
-				**/
+				
 				Metadata storedMetadata = filesWithMetadataMap.get(filelocation);
 				int versionNumber = storedMetadata.getVersionInfoNumber() + 1;
 				
@@ -1086,8 +1088,10 @@ public class ChunkServer implements Node {
 	}
 	
 	private void saveFile(String fileName, byte[] chunkData, int chunkNumber, int versionNumber) {
-		//String fileAbsolutePath = FILE_LOCATION + fileName;
-		String path = this.tempFileLocationReplacement + fileName + "_chunk" + chunkNumber;
+
+		//String path = this.tempFileLocationReplacement + fileName + "_chunk" + chunkNumber; DKIELMAN
+		int filenameChunkNumber = chunkNumber + 1;
+		String path = this.tempFileLocationReplacement + fileName + "_chunk" + filenameChunkNumber;
 		File fileLocationToBeSaved = new File(path.substring(0, path.lastIndexOf("/")));
 		
 		if (!fileLocationToBeSaved.exists()) {
