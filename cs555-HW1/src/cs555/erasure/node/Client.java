@@ -500,13 +500,21 @@ public class Client implements Node {
 	
 	private void encodeAndProcessReceivedChunks(String filename) {
 		
-		String path = System.getProperty("user.dir") + "/tmp/received/";
+		//String path = System.getProperty("user.dir") + "/tmp/received/";
+		String path = "/tmp/received_dkielman/";
 		File pathFile = new File(path);
 		if (!pathFile.exists()) {
 			pathFile.mkdir();
 		}
 		
-		String receivedFilePath = path + filename;
+		String receivedFileName = filename.substring(filename.lastIndexOf("/") + 1, filename.length());
+		System.out.println("Attemping to write to the following directory:");
+		System.out.println(path);
+
+		//String receivedFilePath = path + filename;
+		String receivedFilePath = path + receivedFileName;
+		System.out.println("Received Path is as follows: ");
+		System.out.println(receivedFilePath);
 		
 		File receivedFile = new File(receivedFilePath);
 		
@@ -567,14 +575,14 @@ public class Client implements Node {
 				ReedSolomon reedSolomon = new ReedSolomon(DATA_SHARDS, PARITY_SHARDS);
 				reedSolomon.decodeMissing(shards, shardPresent, 0, shardSize);
 				
-				byte[] allbytes = new byte[shardSize * DATA_SHARDS];
+				byte[] allBytes = new byte[shardSize * DATA_SHARDS];
 	            for (int i = 0; i < DATA_SHARDS; i++) {
-	                System.arraycopy(shards[i], 0, allbytes, shardSize * i, shardSize);
+	                System.arraycopy(shards[i], 0, allBytes, shardSize * i, shardSize);
 	            }
 				
-	            int chunkSize = ByteBuffer.wrap(allbytes).getInt();
+	            int chunkSize = ByteBuffer.wrap(allBytes).getInt();
 	            byte[] chunk = new byte[chunkSize];
-	            System.arraycopy(allbytes, BYTES_IN_INT, chunk, 0, chunkSize);
+	            System.arraycopy(allBytes, BYTES_IN_INT, chunk, 0, chunkSize);
 	            fos.write(chunk);
 			}
 			

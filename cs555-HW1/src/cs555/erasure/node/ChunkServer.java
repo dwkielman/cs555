@@ -138,6 +138,8 @@ public class ChunkServer implements Node {
 			this.localHostIPAddress = InetAddress.getLocalHost().getCanonicalHostName();
 			this.localFilePath = InetAddress.getLocalHost().getHostName() + "/tmp/data/";
 			this.tempFileLocationReplacement = FILE_LOCATION + this.localFilePath;
+			this.tempFileLocationReplacement = "/tmp/stored_dkielman/";
+			System.out.println("Data will be stored at: " + this.tempFileLocationReplacement);
 			
 			if (DEBUG) { System.out.println("My host IP Address is: " + this.localHostIPAddress); }
 		} catch (UnknownHostException uhe) {
@@ -159,30 +161,8 @@ public class ChunkServer implements Node {
 				break;
 			// CONTROLLER_HEARTBEAT_TO_CHUNKSERVER = 6004:
 			case Protocol.CONTROLLER_HEARTBEAT_TO_CHUNKSERVER:
-				//if (DEBUG) { System.out.println("Heartbeat from Controller."); }
+				if (DEBUG) { System.out.println("Heartbeat from Controller."); }
 				break;
-				/** 
-			// CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER = 6005
-			case Protocol.CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER:
-				handleControllerForwardDataToNewChunkServer(event);
-				break;
-			// CONTROLLER_FORWARD_CORRUPT_CHUNK_TO_CHUNKSERVER = 6006
-			case Protocol.CONTROLLER_FORWARD_CORRUPT_CHUNK_TO_CHUNKSERVER:
-				handleControllerForwardFixCorruptChunkToChunkServer(event);
-				break;
-			// CONTROLLER_FORWARD_ONLY_CORRUPT_CHUNK_TO_CHUNKSERVER = 6007
-			case Protocol.CONTROLLER_FORWARD_ONLY_CORRUPT_CHUNK_TO_CHUNKSERVER:
-				handleControllerForwardOnlyFixCorruptChunkToChunkServer(event);
-				break;
-			// CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER = 7001
-			case Protocol.CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER:
-				handleLastDataReceived(event);
-				break;
-			// CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER = 7006
-			case Protocol.CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER:
-				handleChunkServerFixCorruptChunkToChunkServer(event);
-				break;
-				**/
 			// CLIENT_SEND_CHUNK_TO_CHUNKSERVER = 8002
 			case Protocol.CLIENT_SEND_CHUNK_TO_CHUNKSERVER:
 				handleChunkDataReceieved(event);
@@ -288,7 +268,6 @@ public class ChunkServer implements Node {
 		if (DEBUG) { System.out.println("end ChunkServer handleChunkServerRegisterResponse"); }
 	}
 	
-	// ClientSendChunkToChunkServer(byte[] chunkBytes, int chunkNumber, String filename, int shardNumber)
 	private void handleChunkDataReceieved(Event event) {
 		if (DEBUG) { System.out.println("begin ChunkServer handleChunkServerRegisterResponse"); }
 		ClientSendChunkToChunkServer chunkDataReceived = (ClientSendChunkToChunkServer) event;
@@ -301,7 +280,6 @@ public class ChunkServer implements Node {
 		HashMap<Integer, ArrayList<Integer>> chunksWithShardsMap = new HashMap<Integer, ArrayList<Integer>>();
 		ArrayList<Integer> shardNumbers = new ArrayList<Integer>();
 		
-		// filesWithChunkNumberWithShardNumber = new HashMap<String, HashMap<Integer, ArrayList<Integer>>>();
 		// file is not currently stored on the server, need to add it for the first time
 		synchronized (filesWithChunkNumberWithShardNumber) {
 			if (!filesWithChunkNumberWithShardNumber.containsKey(filename)) {
@@ -343,7 +321,6 @@ public class ChunkServer implements Node {
 		if (DEBUG) { System.out.println("end ChunkServer handleChunkDataReceieved"); }
 	}
 	
-	// ClientRequestToReadFromChunkServer(NodeInformation nodeInformation, int chunkNumber, String fileName, int totalNumberOfChunks, int shardNumber)
 	private void handleClientRequestToReadFromChunkServer(Event event) {
 		if (DEBUG) { System.out.println("begin ChunkServer handleClientRequestToReadFromChunkServer"); }
 		ClientRequestToReadFromChunkServer clientRequest = (ClientRequestToReadFromChunkServer) event;
@@ -360,7 +337,7 @@ public class ChunkServer implements Node {
 		
 		System.out.println("Request to get file: " + filelocation);
 		
-		Boolean isCorrupt = true;
+		Boolean isNotCorrupt = true;
 		
 		if (fileToReturn.exists()) {
 			try {
@@ -379,32 +356,16 @@ public class ChunkServer implements Node {
 				
 				if (!tempMetadata.getChecksum().equals(storedChecksum)) {
 					System.out.println("Data has been corrupted, Marking Shard as corrupted.");
-					isCorrupt = false;
+					isNotCorrupt = false;
 				}
 				Socket clientServer = new Socket(client.getNodeIPAddress(), client.getNodePortNumber());
 				
 				TCPSender clientSender = new TCPSender(clientServer);
-				// ChunkServerSendChunkToClient(byte[] chunkBytes, int chunkNumber, String filename,  int totalNumberOfChunks, int shardNumber
-				ChunkServerSendChunkToClient chunkToSend = new ChunkServerSendChunkToClient(tempData, chunknumber, filename, totalNumberOfChunks, shardNumber, isCorrupt);
+				
+				ChunkServerSendChunkToClient chunkToSend = new ChunkServerSendChunkToClient(tempData, chunknumber, filename, totalNumberOfChunks, shardNumber, isNotCorrupt);
 				
 				clientSender.sendData(chunkToSend.getBytes());
-				/**
-				if (tempMetadata.getChecksum().equals(storedChecksum)) {
-					// success, requested data is same as the one stored on this system
 
-					Socket clientServer = new Socket(client.getNodeIPAddress(), client.getNodePortNumber());
-					
-					TCPSender clientSender = new TCPSender(clientServer);
-					// ChunkServerSendChunkToClient(byte[] chunkBytes, int chunkNumber, String filename,  int totalNumberOfChunks, int shardNumber
-					ChunkServerSendChunkToClient chunkToSend = new ChunkServerSendChunkToClient(tempData, chunknumber, filename, totalNumberOfChunks, shardNumber, isCorrupt);
-					
-					clientSender.sendData(chunkToSend.getBytes());
-					
-				} else {
-					// data has been messed with in some way
-					System.out.println("Data has been corrupted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
-				}
-				**/
 			} catch (FileNotFoundException e) {
 				e.printStackTrace();
 			} catch (IOException e) {
@@ -418,16 +379,14 @@ public class ChunkServer implements Node {
 			System.out.println("Filename requested: " + filename);
 			System.out.println("Chunk number requested: " + chunknumber);
 			System.out.println("Shard number requested: " + shardNumber);
-			//synchronized (filesWithChunkNumberWithShardNumber) {
-				//filesWithChunkNumberWithShardNumber.get(filename).get(chunknumber).remove(shardNumber);
-			//}
+
 		}
 
 		if (DEBUG) { System.out.println("end ChunkServer handleClientRequestToReadFromChunkServer"); }
 	}
 	
 	private void saveFile(String fileName, byte[] chunkData, int chunkNumber, int versionNumber, int shardNumber) {
-		//String fileAbsolutePath = FILE_LOCATION + fileName;
+		
 		String path = this.tempFileLocationReplacement + fileName + "_chunk" + chunkNumber + "_shard" + shardNumber;
 		File fileLocationToBeSaved = new File(path.substring(0, path.lastIndexOf("/")));
 		

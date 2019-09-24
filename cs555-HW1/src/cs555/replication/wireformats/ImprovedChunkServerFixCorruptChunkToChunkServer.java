@@ -8,10 +8,12 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
-public class ChunkServerFixCorruptChunkToChunkServer implements Event {
+public class ImprovedChunkServerFixCorruptChunkToChunkServer implements Event {
 
-	private final int type = Protocol.CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER;
+	private final int type = Protocol.IMPROVED_CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER;
 	private byte[] chunkBytes;
 	private int chunkNumber;
 	private String filename;
@@ -20,8 +22,9 @@ public class ChunkServerFixCorruptChunkToChunkServer implements Event {
 	private ArrayList<Integer> badSlices;
 	private int numberOfDataStored;
 	private int correctSizeOfFile;
+	private HashMap<Integer, byte[]> fixedSlicesWithBytes = new HashMap<Integer, byte[]>();
 	
-	public ChunkServerFixCorruptChunkToChunkServer(byte[] chunkBytes, int chunkNumber, String filename, long timestamp, int numberOfBadSlices, ArrayList<Integer> badSlices, int numberOfDataStored, int correctSizeOfFile) {
+	public ImprovedChunkServerFixCorruptChunkToChunkServer(byte[] chunkBytes, int chunkNumber, String filename, long timestamp, int numberOfBadSlices, ArrayList<Integer> badSlices, int numberOfDataStored, int correctSizeOfFile, HashMap<Integer, byte[]> fixedSlicesWithBytes) {
 		this.chunkBytes = chunkBytes;
 		this.chunkNumber = chunkNumber;
 		this.filename = filename;
@@ -30,6 +33,7 @@ public class ChunkServerFixCorruptChunkToChunkServer implements Event {
 		this.badSlices = badSlices;
 		this.numberOfDataStored = numberOfDataStored;
 		this.correctSizeOfFile = correctSizeOfFile;
+		this.fixedSlicesWithBytes = fixedSlicesWithBytes;
 	}
 	
 	/**
@@ -43,16 +47,17 @@ public class ChunkServerFixCorruptChunkToChunkServer implements Event {
 	 * badSlices
 	 * numberOfDataStored
 	 * correctSizeOfFile
+	 * fixedSlicesWithBytes
 	 * @throws IOException 
 	 */
-	public ChunkServerFixCorruptChunkToChunkServer(byte[] marshalledBytes) throws IOException {
+	public ImprovedChunkServerFixCorruptChunkToChunkServer(byte[] marshalledBytes) throws IOException {
 		ByteArrayInputStream baInputStream = new ByteArrayInputStream(marshalledBytes);
 		DataInputStream din = new DataInputStream(new BufferedInputStream(baInputStream));
 		
 		int type = din.readInt();
 		
-		if (type != Protocol.CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER) {
-			System.out.println("Invalid Message Type for ChunkServerFixCorruptChunkToChunkServer");
+		if (type != Protocol.IMPROVED_CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER) {
+			System.out.println("Invalid Message Type for ImprovedChunkServerFixCorruptChunkToChunkServer");
 			return;
 		}
 		
@@ -98,6 +103,19 @@ public class ChunkServerFixCorruptChunkToChunkServer implements Event {
 		// correctSizeOfFile
 		int correctSizeOfFile = din.readInt();
 		this.correctSizeOfFile = correctSizeOfFile;
+		
+		// fixedSlicesWithBytes
+		this.fixedSlicesWithBytes = new HashMap<Integer, byte[]>();
+		
+		for (int i=0; i < this.numberOfBadSlices; i++) {
+			int sliceNumber = din.readInt();
+			
+			// fixedBytes
+			int fixedBytesLength = din.readInt();
+			byte[] fixedBytes = new byte[fixedBytesLength];
+			din.readFully(fixedBytes);
+			this.fixedSlicesWithBytes.put(sliceNumber, fixedBytes);
+		}
 		
 		baInputStream.close();
 		din.close();
@@ -146,6 +164,16 @@ public class ChunkServerFixCorruptChunkToChunkServer implements Event {
 		// correctSizeOfFile
 		dout.writeInt(this.correctSizeOfFile);
 		
+		// fixedSlicesWithBytes
+		for (Map.Entry<Integer, byte[]> entrySet : this.fixedSlicesWithBytes.entrySet()) {
+			int sliceNumber = entrySet.getKey();
+			dout.writeInt(sliceNumber);
+			byte[] fixedBytes = entrySet.getValue();
+			int fixedBytesLength = fixedBytes.length;
+			dout.writeInt(fixedBytesLength);
+			dout.write(fixedBytes);
+		}
+		
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
@@ -183,4 +211,9 @@ public class ChunkServerFixCorruptChunkToChunkServer implements Event {
 	public int getCorrectSizeOfFile() {
 		return correctSizeOfFile;
 	}
+	
+	public HashMap<Integer, byte[]> getFixedSlicesWithBytes() {
+		return fixedSlicesWithBytes;
+	}
+
 }

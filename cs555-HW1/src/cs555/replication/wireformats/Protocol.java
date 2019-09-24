@@ -32,5 +32,7 @@ public class Protocol {
 	public static final int CLIENT_SEND_CHUNK_TO_CHUNKSERVER = 8002;
 	public static final int CLIENT_READ_REQUEST_TO_CONTROLLER = 8003;
 	public static final int CLIENT_READ_REQUEST_TO_CHUNKSERVER = 8004;
+
+	public static final int IMPROVED_CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER = 7010;
 	
 }

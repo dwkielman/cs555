@@ -33,6 +33,7 @@ import cs555.replication.wireformats.ControllerForwardFixCorruptChunkToChunkServ
 import cs555.replication.wireformats.ControllerForwardOnlyFixCorruptChunkToChunkServer;
 import cs555.replication.wireformats.ControllerRegisterResponseToChunkServer;
 import cs555.replication.wireformats.Event;
+import cs555.replication.wireformats.ImprovedChunkServerFixCorruptChunkToChunkServer;
 import cs555.replication.wireformats.Protocol;
 
 /**
@@ -135,9 +136,7 @@ public class ChunkServer implements Node {
 			this.tempFileLocationReplacement = FILE_LOCATION + this.localFilePath;
 			this.tempFileLocationReplacement = "/tmp/stored_dkielman/";
 			System.out.println("Data will be stored at: " + this.tempFileLocationReplacement);
-			// DKIELMAN
-			
-			
+
 			if (DEBUG) { System.out.println("My host IP Address is: " + this.localHostIPAddress); }
 		} catch (UnknownHostException uhe) {
 			uhe.printStackTrace();
@@ -187,6 +186,10 @@ public class ChunkServer implements Node {
 			// CLIENT_READ_REQUEST_TO_CHUNKSERVER = 8004
 			case Protocol.CLIENT_READ_REQUEST_TO_CHUNKSERVER:
 				handleClientRequestToReadFromChunkServer(event);
+				break;
+			// IMPROVED_CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER = 7010
+			case Protocol.IMPROVED_CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER:
+				improvedHandleChunkServerFixCorruptChunkToChunkServer(event);
 				break;
 			default:
 				System.out.println("Invalid Event to Node.");
@@ -724,6 +727,11 @@ public class ChunkServer implements Node {
 					
 					int excessTempDataCount = tempData.length % SIZE_OF_SLICE;
 					
+					// if the excess is zero, means there should be a missing slice added
+					if (excessTempDataCount == 0) {
+						excessTempDataCount = SIZE_OF_SLICE;
+					}
+					
 					//byte[] fixedSlices = new byte[numberOfBadSlices * SIZE_OF_SLICE];
 					
 					byte[] fixedSlices = new byte[(numberOfBadSlices - 1) * SIZE_OF_SLICE + excessTempDataCount];
@@ -732,20 +740,63 @@ public class ChunkServer implements Node {
 					
 					System.out.println("Fixing corrupt chunk. Size of tempData stored is: " + tempData.length);
 					
-					int index = 0;
+					System.out.println("Fixed Slices that we have built is initialized to size: " + fixedSlices.length);
+					
+					// DANIEL YOU ARE STUCK HERE, THE ARRAY IS NOT COPYING DIRECTLY AND YOU NEED TO FIGURE OUT WHY
+					// YOU ARE GETTING COPIES OF THE STORED TEMP DATA BUT IT'S THE SAME LINE OVER AND OVER YOU THINK
+					// IT HAS SOMETHING TO DO WITH THE COUNTINDEX INITILIZING J INCORRECTLY. FIGURE OUT ANOTHER WAY TO DO THIS
+					// ARRAYLIST MAYBE? IT'S GETTING CLOSE
+					
+					HashMap<Integer, byte[]> fixedSlicesWithBytes = new HashMap<Integer, byte[]>();
+					
 					int sliceCount = 1;
 					for (Integer i : badslices) {
+						if ((sliceCount * SIZE_OF_SLICE) <= tempData.length) {
+							System.out.println("Standard Slice Size corruption fix.");
+							
+							int dataIndex = i * SIZE_OF_SLICE;
+							byte[] correctedBytes = new byte[SIZE_OF_SLICE];
+							
+							for (int j = 0; j < SIZE_OF_SLICE; j++) {
+								correctedBytes[j] = tempData[dataIndex];
+								dataIndex++;
+							}
+							System.out.println("Exiting loop for writing standard slice size with dataIndex of " + dataIndex);
+							sliceCount++;
+							fixedSlicesWithBytes.put(i, correctedBytes);
+						} else {
+							System.out.println("Stub Slice Size corruption fix.");
+							// non-standard slice length, need to calculate how many bytes to write without going out of bounds
+							//int totalRemainingBytes = (sliceCount * SIZE_OF_SLICE) - tempData.length;
+							int totalRemainingBytes = tempData.length - ((sliceCount - 1) * SIZE_OF_SLICE);
+							int dataIndex = i * SIZE_OF_SLICE;
+							byte[] correctedBytes = new byte[totalRemainingBytes];
+							for (int j = 0; j < totalRemainingBytes; j++) {
+								correctedBytes[j] = tempData[dataIndex];
+								dataIndex++;
+							}
+							fixedSlicesWithBytes.put(i, correctedBytes);
+						}
+					}
+
+					/**
+					int index = 0;
+					int sliceCount = 1;
+					//int globalLoopCount = 0;
+					for (Integer i : badslices) {
 						//if (i < tempData.length) {
-						if ((sliceCount * SIZE_OF_SLICE) < tempData.length) {
+						if ((sliceCount * SIZE_OF_SLICE) <= tempData.length) {
 							System.out.println("Standard Slice Size corruption fix.");
 							int dataIndex = i * SIZE_OF_SLICE;
-							int lastLoopIndex = 0;
-							for (int j = index; j < SIZE_OF_SLICE; j++) {
+							int countIndex = (sliceCount - 1) * SIZE_OF_SLICE;
+							System.out.println("Starting loop for writing standard slice size with dataIndex of " + dataIndex);
+							for (int j = countIndex; j < SIZE_OF_SLICE; j++) {
 								fixedSlices[j] = tempData[dataIndex];
 								dataIndex++;
-								lastLoopIndex = j;
+								//globalLoopCount++;
 							}
-							index = lastLoopIndex + 1;
+							System.out.println("Exiting loop for writing standard slice size with dataIndex of " + dataIndex);
+							//index = lastLoopIndex + 1;
 							sliceCount++;
 							//fixedSlices[index] = tempData[i];
 							//index ++;
@@ -761,18 +812,39 @@ public class ChunkServer implements Node {
 							}
 						}
 					}
-					
+					**/
 					int numberOfDataStored = storedChecksum.split("\n").length;
 					
 					long timestamp = fileToReturn.lastModified();
 					
-					ChunkServerFixCorruptChunkToChunkServer fixedChunk = new ChunkServerFixCorruptChunkToChunkServer(fixedSlices, chunknumber, filename, timestamp, numberOfBadSlices, badslices, numberOfDataStored);
+					System.out.println("Final size for fixed bytes about to send: " + fixedSlices.length);
+					
+					
+					ImprovedChunkServerFixCorruptChunkToChunkServer improvedFixedChunk = new ImprovedChunkServerFixCorruptChunkToChunkServer(fixedSlices, chunknumber, filename, timestamp, numberOfBadSlices, badslices, numberOfDataStored, tempData.length, fixedSlicesWithBytes);
+					
+					NodeInformation corruptChunkServer = fixCorrupt.getChunkServer();
+					
+					Socket corruptChunkServerSocket = new Socket(corruptChunkServer.getNodeIPAddress(), corruptChunkServer.getNodePortNumber());
+					TCPSender chunkSender = new TCPSender(corruptChunkServerSocket);
+					chunkSender.sendData(improvedFixedChunk.getBytes());
+					
+					
+					
+					
+					
+					// DANIEL TEST WITH SENDING TEMPDATA.LENGTH INSTEAD OF NUMBER OF DATA STORED, IT'S DOING JACK SHIT
+					/**
+					ChunkServerFixCorruptChunkToChunkServer fixedChunk = new ChunkServerFixCorruptChunkToChunkServer(fixedSlices, chunknumber, filename, timestamp, numberOfBadSlices, badslices, numberOfDataStored, tempData.length);
 					
 					NodeInformation corruptChunkServer = fixCorrupt.getChunkServer();
 					
 					Socket corruptChunkServerSocket = new Socket(corruptChunkServer.getNodeIPAddress(), corruptChunkServer.getNodePortNumber());
 					TCPSender chunkSender = new TCPSender(corruptChunkServerSocket);
 					chunkSender.sendData(fixedChunk.getBytes());
+					**/
+					
+					
+					
 					
 				} else {
 					// data has been messed with in some way
@@ -879,6 +951,11 @@ public class ChunkServer implements Node {
 					
 					int excessTempDataCount = tempData.length % SIZE_OF_SLICE;
 					
+					// if the excess is zero, means there should be a missing slice added
+					if (excessTempDataCount == 0) {
+						excessTempDataCount = SIZE_OF_SLICE;
+					}
+					
 					//byte[] fixedSlices = new byte[numberOfBadSlices];
 					byte[] fixedSlices = new byte[(numberOfBadSlices - 1) * SIZE_OF_SLICE + excessTempDataCount];
 					
@@ -889,7 +966,7 @@ public class ChunkServer implements Node {
 					int index = 0;
 					int sliceCount = 1;
 					for (Integer i : badslices) {
-						if ((sliceCount * SIZE_OF_SLICE) < tempData.length) {
+						if ((sliceCount * SIZE_OF_SLICE) <= tempData.length) {
 							System.out.println("Standard Slice Size corruption fix.");
 							int dataIndex = i * SIZE_OF_SLICE;
 							int lastLoopIndex = 0;
@@ -917,7 +994,7 @@ public class ChunkServer implements Node {
 					
 					long timestamp = fileToReturn.lastModified();
 					
-					ChunkServerFixCorruptChunkToChunkServer fixedChunk = new ChunkServerFixCorruptChunkToChunkServer(fixedSlices, chunknumber, filename, timestamp, numberOfBadSlices, badslices, numberOfDataStored);
+					ChunkServerFixCorruptChunkToChunkServer fixedChunk = new ChunkServerFixCorruptChunkToChunkServer(fixedSlices, chunknumber, filename, timestamp, numberOfBadSlices, badslices, numberOfDataStored, tempData.length);
 					
 					NodeInformation corruptChunkServer = fixCorrupt.getChunkServer();
 					
@@ -1007,6 +1084,7 @@ public class ChunkServer implements Node {
 		int chunknumber = fixedChunk.getChunkNumber();
 		ArrayList<Integer> badslices = fixedChunk.getBadSlices();
 		int numberOfDataStored = fixedChunk.getNumberOfDataStored();
+		int correctSizeOfData = fixedChunk.getCorrectSizeOfFile();
 		
 		//String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber; DKIELMAN
 		int filenameChunkNumber = chunknumber + 1;
@@ -1021,21 +1099,69 @@ public class ChunkServer implements Node {
 
 				// using the number of data stored will build a byte array that should hold all of the correct values now
 				// just need to pull the correct data from either the original array or the new array
-				byte[] combinedBytes = new byte[numberOfDataStored * SIZE_OF_SLICE];
+				//byte[] combinedBytes = new byte[numberOfDataStored * SIZE_OF_SLICE];
+				byte[] combinedBytes = new byte[correctSizeOfData];
 
 				System.out.println("###### DEBUGGING INFO #######");
 				System.out.println("Bad Slices are: " + badslices.toString());
 				System.out.println("Number of Data Stored being passed: " + numberOfDataStored);
-				System.out.println("Combined Bytes array size (initialized to number of data stored): " + combinedBytes.length);
+				System.out.println("Combined Bytes array size (initialized to the new passed correct length of the file): " + combinedBytes.length);
 				System.out.println("Fixed Bytes array size (Bytes passed to this function from another chunk server):" + fixedBytes.length);
 				System.out.println("Temp Data array size (local file saved by re-read): " + tempData.length);
 				System.out.println("###### DEBUGGING INFO #######");
 				System.out.println("###### DEBUGGING INFO #######");
 				System.out.println("###### DEBUGGING INFO #######");
 
+				HashMap<Integer, byte[]> fixedSlicesWithBytes = new HashMap<Integer, byte[]>();
+				
+				int tempByteCountLength = tempData.length;
+				int tempBytesCounter = 0;
+				int localBytesCounter = 0;
+				for (int i = 0; i < numberOfDataStored; i++) {
+					// bad slice is stored in the fixed bytes array
+					if (badslices.contains(i)) {
+						System.out.println("Fixing what could be any array slice.");
+						byte[] correctedBytes = fixedSlicesWithBytes.get(i);
+						for (int j = 0; j < correctedBytes.length; j++) {
+							combinedBytes[localBytesCounter] = correctedBytes[j];
+							localBytesCounter++;
+						}
+					} else {
+						// slice size could be less than a normal slice and will be less bytes
+						// should only happen in the final array index
+						if (i == numberOfDataStored - 1) {
+							System.out.println("Using stored final stub array slice.");
+							//int totalRemainingBytes = (i * SIZE_OF_SLICE) - tempByteCountLength;
+							int totalRemainingBytes = tempByteCountLength - (i * SIZE_OF_SLICE);
+							System.out.println("Total Remaining bytes: " + totalRemainingBytes);
+							//System.out.println("Local bytes counter starting: " + localBytesCounter);
+							//System.out.println("Fixed bytes counter starting: " + fixedBytesCounter);
+							tempBytesCounter = i * SIZE_OF_SLICE;
+							for (int j = 0; j < totalRemainingBytes; j++) {
+								combinedBytes[localBytesCounter] = tempData[tempBytesCounter];
+								tempBytesCounter++;
+								localBytesCounter++;
+							}
+						} else {
+							System.out.println("Using stored standard array slice.");
+							// standard slice
+							// original data is fine to use, use that
+							tempBytesCounter = i * SIZE_OF_SLICE;
+							for (int j = 0; j < SIZE_OF_SLICE; j++) {
+								combinedBytes[localBytesCounter] = tempData[tempBytesCounter];
+								tempBytesCounter++;
+								localBytesCounter++;
+							}
+						}
+					}
+				}
+				
+				
+				/**
 				int tempByteCountLength = tempData.length;
 				int tempBytesCounter = 0;
 				int fixedBytesCounter = 0;
+				int localBytesCounter = 0;
 				for (int i = 0; i < numberOfDataStored; i++) {
 					// bad slice is stored in the fixed bytes array
 					if (badslices.contains(i)) {
@@ -1044,17 +1170,23 @@ public class ChunkServer implements Node {
 						if (i == numberOfDataStored - 1) {
 							System.out.println("Fixing final stub array slice.");
 							//int totalRemainingBytes = (i * SIZE_OF_SLICE) - tempByteCountLength;
-							int totalRemainingBytes = tempByteCountLength - (i * SIZE_OF_SLICE);
+							//int totalRemainingBytes = tempByteCountLength - (i * SIZE_OF_SLICE);
+							int totalRemainingBytes = fixedBytes.length - (i * SIZE_OF_SLICE);
+							System.out.println("Total Remaining bytes: " + totalRemainingBytes);
+							System.out.println("Local bytes counter starting: " + localBytesCounter);
+							System.out.println("Fixed bytes counter starting: " + fixedBytesCounter);
 							for (int j = 0; j < totalRemainingBytes; j++) {
-								combinedBytes[j] = fixedBytes[fixedBytesCounter];
+								combinedBytes[localBytesCounter] = fixedBytes[fixedBytesCounter];
 								fixedBytesCounter++;
+								localBytesCounter++;
 							}
 						} else {
 							System.out.println("Fixing standard array slice.");
 							// standard slice
 							for (int j = 0; j < SIZE_OF_SLICE; j++) {
-								combinedBytes[j] = fixedBytes[fixedBytesCounter];
+								combinedBytes[localBytesCounter] = fixedBytes[fixedBytesCounter];
 								fixedBytesCounter++;
+								localBytesCounter++;
 							}
 						}
 					} else {
@@ -1064,22 +1196,27 @@ public class ChunkServer implements Node {
 							System.out.println("Using stored final stub array slice.");
 							//int totalRemainingBytes = (i * SIZE_OF_SLICE) - tempByteCountLength;
 							int totalRemainingBytes = tempByteCountLength - (i * SIZE_OF_SLICE);
+							System.out.println("Total Remaining bytes: " + totalRemainingBytes);
+							System.out.println("Local bytes counter starting: " + localBytesCounter);
+							System.out.println("Fixed bytes counter starting: " + fixedBytesCounter);
 							for (int j = 0; j < totalRemainingBytes; j++) {
-								combinedBytes[j] = tempData[fixedBytesCounter];
+								combinedBytes[localBytesCounter] = tempData[fixedBytesCounter];
 								fixedBytesCounter++;
+								localBytesCounter++;
 							}
 						} else {
 							System.out.println("Using stored standard array slice.");
 							// standard slice
 							// original data is fine to use, use that
 							for (int j = 0; j < SIZE_OF_SLICE; j++) {
-								combinedBytes[j] = tempData[tempBytesCounter];
+								combinedBytes[localBytesCounter] = tempData[tempBytesCounter];
 								tempBytesCounter++;
+								localBytesCounter++;
 							}
 						}
 					}
 				}
-				
+				**/
 				Metadata storedMetadata = filesWithMetadataMap.get(filelocation);
 				int versionNumber = storedMetadata.getVersionInfoNumber() + 1;
 				
@@ -1155,5 +1292,171 @@ public class ChunkServer implements Node {
 			System.out.println("ChunkServer: Error in saveFile: Writing file failed.");
 			e.printStackTrace();
 		}
+	}
+	
+	private void improvedHandleChunkServerFixCorruptChunkToChunkServer(Event event) {
+		if (DEBUG) { System.out.println("begin ChunkServer handleChunkServerFixCorruptChunkToChunkServer"); }
+		
+		ImprovedChunkServerFixCorruptChunkToChunkServer fixedChunk = (ImprovedChunkServerFixCorruptChunkToChunkServer) event;
+		
+		byte[] fixedBytes = fixedChunk.getChunkBytes();
+		
+		String filename = fixedChunk.getFilename();
+		int chunknumber = fixedChunk.getChunkNumber();
+		ArrayList<Integer> badslices = fixedChunk.getBadSlices();
+		int numberOfDataStored = fixedChunk.getNumberOfDataStored();
+		int correctSizeOfData = fixedChunk.getCorrectSizeOfFile();
+		
+		//String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + chunknumber; DKIELMAN
+		int filenameChunkNumber = chunknumber + 1;
+		String filelocation = this.tempFileLocationReplacement + filename + "_chunk" + filenameChunkNumber;
+		File fileToReturn = new File(filelocation);
+		
+		if (fileToReturn.exists()) {
+			try {
+				RandomAccessFile raf = new RandomAccessFile(fileToReturn, "rw");
+				byte[] tempData = new byte[(int) fileToReturn.length()];
+				raf.read(tempData);
+
+				// using the number of data stored will build a byte array that should hold all of the correct values now
+				// just need to pull the correct data from either the original array or the new array
+				//byte[] combinedBytes = new byte[numberOfDataStored * SIZE_OF_SLICE];
+				byte[] combinedBytes = new byte[correctSizeOfData];
+
+				System.out.println("###### DEBUGGING INFO #######");
+				System.out.println("Bad Slices are: " + badslices.toString());
+				System.out.println("Number of Data Stored being passed: " + numberOfDataStored);
+				System.out.println("Combined Bytes array size (initialized to the new passed correct length of the file): " + combinedBytes.length);
+				System.out.println("Fixed Bytes array size (Bytes passed to this function from another chunk server):" + fixedBytes.length);
+				System.out.println("Temp Data array size (local file saved by re-read): " + tempData.length);
+				System.out.println("###### DEBUGGING INFO #######");
+				System.out.println("###### DEBUGGING INFO #######");
+				System.out.println("###### DEBUGGING INFO #######");
+
+				HashMap<Integer, byte[]> fixedSlicesWithBytes = new HashMap<Integer, byte[]>();
+				
+				fixedSlicesWithBytes = fixedChunk.getFixedSlicesWithBytes();
+				
+				int tempByteCountLength = tempData.length;
+				int tempBytesCounter = 0;
+				int localBytesCounter = 0;
+				for (int i = 0; i < numberOfDataStored; i++) {
+					// bad slice is stored in the fixed bytes array
+					if (badslices.contains(i)) {
+						System.out.println("Fixing what could be any array slice.");
+						byte[] correctedBytes = fixedSlicesWithBytes.get(i);
+						for (int j = 0; j < correctedBytes.length; j++) {
+							combinedBytes[localBytesCounter] = correctedBytes[j];
+							localBytesCounter++;
+						}
+					} else {
+						// slice size could be less than a normal slice and will be less bytes
+						// should only happen in the final array index
+						if (i == numberOfDataStored - 1) {
+							System.out.println("Using stored final stub array slice.");
+							//int totalRemainingBytes = (i * SIZE_OF_SLICE) - tempByteCountLength;
+							int totalRemainingBytes = tempByteCountLength - (i * SIZE_OF_SLICE);
+							System.out.println("Total Remaining bytes: " + totalRemainingBytes);
+							//System.out.println("Local bytes counter starting: " + localBytesCounter);
+							//System.out.println("Fixed bytes counter starting: " + fixedBytesCounter);
+							tempBytesCounter = i * SIZE_OF_SLICE;
+							for (int j = 0; j < totalRemainingBytes; j++) {
+								combinedBytes[localBytesCounter] = tempData[tempBytesCounter];
+								tempBytesCounter++;
+								localBytesCounter++;
+							}
+						} else {
+							System.out.println("Using stored standard array slice.");
+							// standard slice
+							// original data is fine to use, use that
+							tempBytesCounter = i * SIZE_OF_SLICE;
+							for (int j = 0; j < SIZE_OF_SLICE; j++) {
+								combinedBytes[localBytesCounter] = tempData[tempBytesCounter];
+								tempBytesCounter++;
+								localBytesCounter++;
+							}
+						}
+					}
+				}
+				
+				
+				/**
+				int tempByteCountLength = tempData.length;
+				int tempBytesCounter = 0;
+				int fixedBytesCounter = 0;
+				int localBytesCounter = 0;
+				for (int i = 0; i < numberOfDataStored; i++) {
+					// bad slice is stored in the fixed bytes array
+					if (badslices.contains(i)) {
+						// slice size could be less than a normal slice and will be less bytes
+						// should only happen in the final array index
+						if (i == numberOfDataStored - 1) {
+							System.out.println("Fixing final stub array slice.");
+							//int totalRemainingBytes = (i * SIZE_OF_SLICE) - tempByteCountLength;
+							//int totalRemainingBytes = tempByteCountLength - (i * SIZE_OF_SLICE);
+							int totalRemainingBytes = fixedBytes.length - (i * SIZE_OF_SLICE);
+							System.out.println("Total Remaining bytes: " + totalRemainingBytes);
+							System.out.println("Local bytes counter starting: " + localBytesCounter);
+							System.out.println("Fixed bytes counter starting: " + fixedBytesCounter);
+							for (int j = 0; j < totalRemainingBytes; j++) {
+								combinedBytes[localBytesCounter] = fixedBytes[fixedBytesCounter];
+								fixedBytesCounter++;
+								localBytesCounter++;
+							}
+						} else {
+							System.out.println("Fixing standard array slice.");
+							// standard slice
+							for (int j = 0; j < SIZE_OF_SLICE; j++) {
+								combinedBytes[localBytesCounter] = fixedBytes[fixedBytesCounter];
+								fixedBytesCounter++;
+								localBytesCounter++;
+							}
+						}
+					} else {
+						// slice size could be less than a normal slice and will be less bytes
+						// should only happen in the final array index
+						if (i == numberOfDataStored - 1) {
+							System.out.println("Using stored final stub array slice.");
+							//int totalRemainingBytes = (i * SIZE_OF_SLICE) - tempByteCountLength;
+							int totalRemainingBytes = tempByteCountLength - (i * SIZE_OF_SLICE);
+							System.out.println("Total Remaining bytes: " + totalRemainingBytes);
+							System.out.println("Local bytes counter starting: " + localBytesCounter);
+							System.out.println("Fixed bytes counter starting: " + fixedBytesCounter);
+							for (int j = 0; j < totalRemainingBytes; j++) {
+								combinedBytes[localBytesCounter] = tempData[fixedBytesCounter];
+								fixedBytesCounter++;
+								localBytesCounter++;
+							}
+						} else {
+							System.out.println("Using stored standard array slice.");
+							// standard slice
+							// original data is fine to use, use that
+							for (int j = 0; j < SIZE_OF_SLICE; j++) {
+								combinedBytes[localBytesCounter] = tempData[tempBytesCounter];
+								tempBytesCounter++;
+								localBytesCounter++;
+							}
+						}
+					}
+				}
+				**/
+				Metadata storedMetadata = filesWithMetadataMap.get(filelocation);
+				int versionNumber = storedMetadata.getVersionInfoNumber() + 1;
+				
+				raf.close();
+				
+				saveFile(filename, combinedBytes, chunknumber, versionNumber);
+				
+				// consider telling the controller here that the data has been healed and that the chunk server can be added back to being ana availbale chunk server
+				ChunkServerNotifyFixSuccessToController fixSuccess = new ChunkServerNotifyFixSuccessToController(chunkServerNodeInformation, chunknumber, filename);
+				this.controllerSender.sendData(fixSuccess.getBytes());
+				
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		if (DEBUG) { System.out.println("end ChunkServer handleChunkServerFixCorruptChunkToChunkServer"); }
 	}
 }

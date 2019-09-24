@@ -130,6 +130,10 @@ public class EventFactory {
 				case Protocol.CLIENT_READ_REQUEST_TO_CHUNKSERVER:
 					event = new ClientRequestToReadFromChunkServer(marshalledBytes);
 					break;
+				// IMPROVED_CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER = 7010
+				case Protocol.IMPROVED_CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER:
+					event = new ImprovedChunkServerFixCorruptChunkToChunkServer(marshalledBytes);
+					break;
 				default:
 					System.out.println("Invalid Message Type");
 					return null;
