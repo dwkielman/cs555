@@ -721,7 +721,12 @@ public class ChunkServer implements Node {
 					
 					// now find the correct slices to forward that data to the chunk server missing those slices
 					int numberOfBadSlices = fixCorrupt.getNumberOfBadSlices();
-					byte[] fixedSlices = new byte[numberOfBadSlices * SIZE_OF_SLICE];
+					
+					int excessTempDataCount = tempData.length % SIZE_OF_SLICE;
+					
+					//byte[] fixedSlices = new byte[numberOfBadSlices * SIZE_OF_SLICE];
+					
+					byte[] fixedSlices = new byte[(numberOfBadSlices - 1) * SIZE_OF_SLICE + excessTempDataCount];
 					
 					ArrayList<Integer> badslices = fixCorrupt.getBadSlices();
 					
@@ -747,7 +752,8 @@ public class ChunkServer implements Node {
 						} else {
 							System.out.println("Stub Slice Size corruption fix.");
 							// non-standard slice length, need to calculate how many bytes to write without going out of bounds
-							int totalRemainingBytes = (sliceCount * SIZE_OF_SLICE) - tempData.length;
+							//int totalRemainingBytes = (sliceCount * SIZE_OF_SLICE) - tempData.length;
+							int totalRemainingBytes = tempData.length - ((sliceCount - 1) * SIZE_OF_SLICE);
 							int dataIndex = i * SIZE_OF_SLICE;
 							for (int j = index; j < totalRemainingBytes; j++) {
 								fixedSlices[j] = tempData[dataIndex];
@@ -870,7 +876,11 @@ public class ChunkServer implements Node {
 
 					// find the correct slices to forward that data to the chunk server missing those slices
 					int numberOfBadSlices = fixCorrupt.getNumberOfBadSlices();
-					byte[] fixedSlices = new byte[numberOfBadSlices];
+					
+					int excessTempDataCount = tempData.length % SIZE_OF_SLICE;
+					
+					//byte[] fixedSlices = new byte[numberOfBadSlices];
+					byte[] fixedSlices = new byte[(numberOfBadSlices - 1) * SIZE_OF_SLICE + excessTempDataCount];
 					
 					ArrayList<Integer> badslices = fixCorrupt.getBadSlices();
 					
@@ -893,7 +903,8 @@ public class ChunkServer implements Node {
 						} else {
 							System.out.println("Stub Slice Size corruption fix.");
 							// non-standard slice length, need to calculate how many bytes to write without going out of bounds
-							int totalRemainingBytes = (sliceCount * SIZE_OF_SLICE) - tempData.length;
+							//int totalRemainingBytes = (sliceCount * SIZE_OF_SLICE) - tempData.length;
+							int totalRemainingBytes = tempData.length - ((sliceCount - 1) * SIZE_OF_SLICE);
 							int dataIndex = i * SIZE_OF_SLICE;
 							for (int j = index; j < totalRemainingBytes; j++) {
 								fixedSlices[j] = tempData[dataIndex];
@@ -1032,7 +1043,8 @@ public class ChunkServer implements Node {
 						// should only happen in the final array index
 						if (i == numberOfDataStored - 1) {
 							System.out.println("Fixing final stub array slice.");
-							int totalRemainingBytes = (i * SIZE_OF_SLICE) - tempByteCountLength;
+							//int totalRemainingBytes = (i * SIZE_OF_SLICE) - tempByteCountLength;
+							int totalRemainingBytes = tempByteCountLength - (i * SIZE_OF_SLICE);
 							for (int j = 0; j < totalRemainingBytes; j++) {
 								combinedBytes[j] = fixedBytes[fixedBytesCounter];
 								fixedBytesCounter++;
@@ -1050,7 +1062,8 @@ public class ChunkServer implements Node {
 						// should only happen in the final array index
 						if (i == numberOfDataStored - 1) {
 							System.out.println("Using stored final stub array slice.");
-							int totalRemainingBytes = (i * SIZE_OF_SLICE) - tempByteCountLength;
+							//int totalRemainingBytes = (i * SIZE_OF_SLICE) - tempByteCountLength;
+							int totalRemainingBytes = tempByteCountLength - (i * SIZE_OF_SLICE);
 							for (int j = 0; j < totalRemainingBytes; j++) {
 								combinedBytes[j] = tempData[fixedBytesCounter];
 								fixedBytesCounter++;
