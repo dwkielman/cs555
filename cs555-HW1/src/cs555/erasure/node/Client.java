@@ -54,12 +54,13 @@ public class Client implements Node {
 	private HashMap<String, HashMap<Integer, byte[]>> receivedChunksMap;
 	private HashMap<String, HashMap<Integer, HashMap<Integer, NodeInformation>>> receivedFileWithChunkNumberWithShardWithChunkServers;
 	private HashMap<Integer, HashMap<Integer, byte[]>> receivedFileWithChunkNumberWithShardWithBytes;
-	private HashMap<Integer, Boolean> isCorruptMap;
+	private HashMap<Integer, HashMap<Integer, Boolean>> isCorruptMap;
 	private static final int DATA_SHARDS = 6;
 	private static final int PARITY_SHARDS = 3;
 	private static final int TOTAL_SHARDS = 9;
 	private static final int BYTES_IN_INT = 4;
 	private static final int SIZE_OF_CHUNK = 1024 * 64;
+	
 	private static Client client;
 	
 	private Client(String controllerIPAddress, int controllerPortNumber) {
@@ -69,7 +70,7 @@ public class Client implements Node {
 		this.fileWithChunkNumberWithShardWithChunkServers = new HashMap<String, HashMap<Integer, HashMap<Integer, NodeInformation>>>();
 		this.receivedFileWithChunkNumberWithShardWithChunkServers = new HashMap<String, HashMap<Integer, HashMap<Integer, NodeInformation>>>();
 		this.receivedFileWithChunkNumberWithShardWithBytes = new HashMap<Integer, HashMap<Integer, byte[]>>();
-		this.isCorruptMap = new HashMap<Integer, Boolean>();
+		this.isCorruptMap = new HashMap<Integer, HashMap<Integer, Boolean>>();
 		
 		try {
 			TCPServerThread serverThread = new TCPServerThread(0, this);
@@ -270,13 +271,11 @@ public class Client implements Node {
 		ControllerChunkServersResponseToClient clientChunkServersFromController = (ControllerChunkServersResponseToClient) event;
 		if (DEBUG) { System.out.println("Client got a message type: " + clientChunkServersFromController.getType()); }
 		
-		// int shardNumberWithChunkServerSize, HashMap<Integer, NodeInformation> shardNumberWithChunkServer, int chunkNumber, int totalNumberOfChunks, String filename
 		String filename = clientChunkServersFromController.getFilename();
 		int totalNumberOfChunks = clientChunkServersFromController.getTotalNumberOfChunks();
 		int chunkNumber = clientChunkServersFromController.getChunkNumber();
 		HashMap<Integer, NodeInformation> shardNumberWithChunkServer = clientChunkServersFromController.getShardNumberWithChunkServer();
 
-		// fileWitrhChunkNumberWithShardWithChunkServers
 		synchronized (fileWithChunkNumberWithShardWithChunkServers) {
 			if (!fileWithChunkNumberWithShardWithChunkServers.containsKey(filename)) {
 				HashMap<Integer, HashMap<Integer, NodeInformation>> tempMap = new HashMap<Integer, HashMap<Integer, NodeInformation>>();
@@ -290,14 +289,14 @@ public class Client implements Node {
 			}
 		}
 		
-		System.out.println("Finished processing chunk number " + chunkNumber + " out of " + totalNumberOfChunks + " total chunks");
+		if (DEBUG) { System.out.println("Finished processing chunk number " + chunkNumber + " out of " + totalNumberOfChunks + " total chunks"); }
 		if (chunkNumber == (totalNumberOfChunks - 1)) {
-			System.out.println("Sending chunks to chunk servers now.");
+			if (DEBUG) {System.out.println("Sending chunks to chunk servers now."); }
 			encodeAndProcessStoredChunks(filename);
 		} else {
 			try {
 				chunkNumber++;
-				System.out.println("About to request chunk number " + chunkNumber + " out of " + totalNumberOfChunks + " total chunks");
+				if (DEBUG) { System.out.println("About to request chunk number " + chunkNumber + " out of " + totalNumberOfChunks + " total chunks"); }
 				ClientChunkServerRequestToController chunkServersRequest = new ClientChunkServerRequestToController(chunkNumber, this.clientNodeInformation, totalNumberOfChunks, filename);
 				this.controllerSender.sendData(chunkServersRequest.getBytes());
 			} catch (IOException ioe) {
@@ -364,6 +363,8 @@ public class Client implements Node {
 					ReedSolomon reedSolomon = new ReedSolomon(DATA_SHARDS, PARITY_SHARDS);
 					reedSolomon.encodeParity(shards, 0, shardSize);
 					
+					if (DEBUG) { System.out.println("standard shard size that we are sending is: " + shardSize); }
+					
 					// finally store the contents of the 'shards' 2-D array
 					// locallyStoredShardsWithBytes
 					for (int i = 0; i < TOTAL_SHARDS; i++) {
@@ -404,7 +405,7 @@ public class Client implements Node {
 		try {
 			ClientReadFileRequestToController readRequest = new ClientReadFileRequestToController(chunkNumber, this.clientNodeInformation, filename);
 			
-			System.out.println("Telling the Controller to send the file to: " + this.clientNodeInformation.getNodeIPAddress());
+			if (DEBUG) { System.out.println("Telling the Controller to send the file to: " + this.clientNodeInformation.getNodeIPAddress()); }
 			
 			this.controllerSender.sendData(readRequest.getBytes());
 			
@@ -420,7 +421,6 @@ public class Client implements Node {
 		if (DEBUG) { System.out.println("begin Client handleControllerChunkServerToReadResponseToClient"); }
 		ControllerChunkServerToReadResponseToClient chunkServerToReadResponse = (ControllerChunkServerToReadResponseToClient) event;
 		
-		// ControllerChunkServerToReadResponseToClient(int shardNumberWithChunkServerSize, HashMap<Integer, NodeInformation> shardNumberWithChunkServer, int chunkNumber, int totalNumberOfChunks, String filename
 		HashMap<Integer, NodeInformation> shardNumberWithChunkServer = new HashMap<Integer, NodeInformation>();
 		shardNumberWithChunkServer = chunkServerToReadResponse.getShardNumberWithChunkServer();
 		int chunkNumber = chunkServerToReadResponse.getChunkNumber();
@@ -430,7 +430,6 @@ public class Client implements Node {
 		// tell each chunk server returned that we need x chunk number and y shard with this filename
 		for (int shardNumber : shardNumberWithChunkServer.keySet()) {
 			NodeInformation chunkServer = shardNumberWithChunkServer.get(shardNumber);
-			// NodeInformation nodeInformation, int chunkNumber, String fileName, int totalNumberOfChunks, int shardNumber
 			ClientRequestToReadFromChunkServer readFromChunkServer = new ClientRequestToReadFromChunkServer(this.clientNodeInformation, chunkNumber, filename, totalNumberOfChunks, shardNumber);
 			try {
 				Socket chunkServerSocket = new Socket(chunkServer.getNodeIPAddress(), chunkServer.getNodePortNumber());
@@ -459,25 +458,36 @@ public class Client implements Node {
 		Boolean isNotCorrupted = chunksReceived.getIsNotCorrupted();
 		
 		HashMap<Integer, byte[]> shardWithBytes = new HashMap<Integer, byte[]>();
+		HashMap<Integer, Boolean> shardWithIsCorrupt = new HashMap<Integer, Boolean>();
 
-		System.out.println("Storing Filename: " + filename + " with chunk number: " + chunkNumber + " from shard number " + shardNumber);
+		if (DEBUG) { System.out.println("Storing Filename: " + filename + " with chunk number: " + chunkNumber + " from shard number " + shardNumber + " with is not corrupted: " + isNotCorrupted); }
 		
 		// HashMap<Integer, HashMap<Integer, byte[]>> receivedFileWithChunkNumberWithShardWithBytes;
 		synchronized (receivedFileWithChunkNumberWithShardWithBytes) {
 			if (!this.receivedFileWithChunkNumberWithShardWithBytes.containsKey(chunkNumber)) {
 				shardWithBytes.put(shardNumber, chunkData);
-				this.isCorruptMap.put(shardNumber, isNotCorrupted);
 				this.receivedFileWithChunkNumberWithShardWithBytes.put(chunkNumber, shardWithBytes);
 			} else {
 				HashMap<Integer, byte[]> tempChunkWithBytes = this.receivedFileWithChunkNumberWithShardWithBytes.get(chunkNumber);
 				tempChunkWithBytes.put(shardNumber, chunkData);
-				this.isCorruptMap.put(shardNumber, isNotCorrupted);
 				this.receivedFileWithChunkNumberWithShardWithBytes.put(chunkNumber, tempChunkWithBytes);
 			}
+			
+			synchronized (isCorruptMap) {
+				if (!this.isCorruptMap.containsKey(chunkNumber)) {
+					shardWithIsCorrupt.put(shardNumber, isNotCorrupted);
+					this.isCorruptMap.put(chunkNumber, shardWithIsCorrupt);
+				} else {
+					HashMap<Integer, Boolean> tempShardWithIsCorrupt = this.isCorruptMap.get(chunkNumber);
+					tempShardWithIsCorrupt.put(shardNumber, isNotCorrupted);
+					this.isCorruptMap.put(chunkNumber, tempShardWithIsCorrupt);
+				}
+			}
+			
 			// need to check if we have all the shards for this chunk before moving on to the next chunk
 			int numberOfShards = this.receivedFileWithChunkNumberWithShardWithBytes.get(chunkNumber).size();
 			
-			System.out.println("For Chunk " + chunkNumber + " have received " + numberOfShards + " number of shards thus far.");
+			if (DEBUG) { System.out.println("For Chunk " + chunkNumber + " have received " + numberOfShards + " number of shards thus far."); }
 			
 			if (numberOfShards == TOTAL_SHARDS) {
 				// received all shards for this chunk, need to ensure that we have all of the chunks associated with this file before merging
@@ -492,7 +502,7 @@ public class Client implements Node {
 				}
 			} else {
 				// still waiting more shards to get for this chunk
-				System.out.println("Still waiting for more shards for this chunk numebr.");
+				if (DEBUG) { System.out.println("Still waiting for more shards for this chunk numebr."); }
 			}
 		}
 		if (DEBUG) { System.out.println("end Client ChunkServerSendChunkToClient"); }
@@ -508,9 +518,11 @@ public class Client implements Node {
 		}
 		
 		String receivedFileName = filename.substring(filename.lastIndexOf("/") + 1, filename.length());
-		System.out.println("Attemping to write to the following directory:");
-		System.out.println(path);
-
+		if (DEBUG) {
+			System.out.println("Attemping to write to the following directory:");
+			System.out.println(path);
+		}
+		
 		//String receivedFilePath = path + filename;
 		String receivedFilePath = path + receivedFileName;
 		System.out.println("Received Path is as follows: ");
@@ -526,10 +538,11 @@ public class Client implements Node {
 			FileOutputStream fos = new FileOutputStream(receivedFile);
 			
 			// cycle through all of the stored chunks, decode and store
-			// HashMap<Integer, HashMap<Integer, byte[]>> receivedFileWithChunkNumberWithShardWithBytes
 			for (HashMap.Entry<Integer, HashMap<Integer, byte[]>> entrySet : receivedFileWithChunkNumberWithShardWithBytes.entrySet()) {
 				int chunkNumber = entrySet.getKey();
 				HashMap<Integer, byte[]> tempChunkWithBytes = this.receivedFileWithChunkNumberWithShardWithBytes.get(chunkNumber);
+				
+				HashMap<Integer, Boolean> shardWithIsCorrupt = this.isCorruptMap.get(chunkNumber);
 				
 				// Read in any of the shards that are present.
 				// (There should be checking here to make sure the input
@@ -539,23 +552,22 @@ public class Client implements Node {
 				
 				int shardSize = 0;
 				int shardCount = 0;
-				//int shardNumber = 0;
 				
 				// now read the shards from the persistance store
-				//for (Integer shardNumber : tempChunkWithBytes.keySet()) {
 				for (int i = 0; i < TOTAL_SHARDS; i++) {
 					
-					boolean isNotCorrupted = this.isCorruptMap.get(i + 1);
+					boolean isNotCorrupted = shardWithIsCorrupt.get(i + 1);
 					byte[] tempReceivedBytes = tempChunkWithBytes.get(i + 1);
 					
 					// Check if the shard is available.
 					// If available, read its content into shards[i]
 					// set shardPresent[i] = true and increase the shardCount by 1.
-					shards[i] = tempReceivedBytes;
-                    //shardPresent[i] = true;
-					shardPresent[i] = isNotCorrupted;
-                    shardCount++;
-                    shardSize = tempReceivedBytes.length;
+					if (isNotCorrupted) {
+						shards[i] = tempReceivedBytes;
+	                    shardPresent[i] = true;
+	                    shardCount++;
+	                    shardSize = tempReceivedBytes.length; // will get set to the same value no matter what due to needing at least enough DATA_SHARDS to create the file
+					}
 				}
 				
 				// We need at least DATA_SHARDS to be able to reconstruct the file.

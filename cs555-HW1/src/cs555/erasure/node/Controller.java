@@ -266,7 +266,7 @@ public class Controller implements Node {
 	}
 	
 	private void handleChunkServerSendMajorHeartbeatToController(Event event) {
-		//if (DEBUG) { System.out.println("begin Controller handleChunkServerSendMajorHeartbeatToController"); }
+		if (DEBUG) { System.out.println("begin Controller handleChunkServerSendMajorHeartbeatToController"); }
 		
 		ChunkServerSendMajorHeartbeatToController majorHeartbeat = (ChunkServerSendMajorHeartbeatToController) event;
 		
@@ -283,11 +283,11 @@ public class Controller implements Node {
 			chunkServerHeartbeatMetadaList.put(chunkServer, hbm);
 		}
 		
-		//if (DEBUG) { System.out.println("end Controller handleChunkServerSendMajorHeartbeatToController"); }
+		if (DEBUG) { System.out.println("end Controller handleChunkServerSendMajorHeartbeatToController"); }
 	}
 	
 	private void handleChunkServerSendMinorHeartbeatToController(Event event) {
-		//if (DEBUG) { System.out.println("begin Controller handleChunkServerSendMinorHeartbeatToController"); }
+		if (DEBUG) { System.out.println("begin Controller handleChunkServerSendMinorHeartbeatToController"); }
 		
 		ChunkServerSendMinorHeartbeatToController minorHeartbeat = (ChunkServerSendMinorHeartbeatToController) event;
 		
@@ -311,7 +311,7 @@ public class Controller implements Node {
 			chunkServerHeartbeatMetadaList.put(chunkServer, hbm);
 		}
 		
-		//if (DEBUG) { System.out.println("end Controller handleChunkServerSendMinorHeartbeatToController"); }
+		if (DEBUG) { System.out.println("end Controller handleChunkServerSendMinorHeartbeatToController"); }
 	}
 	
 	private void handleClientChunkServerRequest(Event event) {
@@ -321,7 +321,7 @@ public class Controller implements Node {
 		int chunkNumber = clientChunkServerRequest.getChunkNumber();
 		String filename = clientChunkServerRequest.getFilename();
 		int totalNumberOfChunks = clientChunkServerRequest.getTotalNumberOfChunks();
-		System.out.println("Chunk Number: " + chunkNumber + ", total number of chunks: " + totalNumberOfChunks);
+		if (DEBUG) { System.out.println("Chunk Number: " + chunkNumber + ", total number of chunks: " + totalNumberOfChunks); }
 		if (DEBUG) { System.out.println("Controller received a message type: " + clientChunkServerRequest.getType()); }
 
 		if (chunkServerHeartbeatMetadaList.size() >= TOTAL_SHARDS) {
@@ -333,14 +333,13 @@ public class Controller implements Node {
 				}
 				tempHbmList.sort((h1, h2) -> Long.compare(h2.getFreeSpaceAvailable(), h1.getFreeSpaceAvailable()));
 
-				if (DEBUG)
-				{
+				if (DEBUG) {
 					System.out.println("The file storage and respective chunk servers are: ");
 					for (HeartbeatMetadata h : tempHbmList) {
 						System.out.println(h.getNodeInformation().getNodeIPAddress() + " with space: " + h.getFreeSpaceAvailable());
 					}
-					
 				}
+				
 				// get the 9 chunk servers with the most space
 				ArrayList<HeartbeatMetadata> hbArrayList = tempHbmList.stream().limit(TOTAL_SHARDS).collect(Collectors.toCollection(ArrayList::new));
 				
@@ -363,10 +362,12 @@ public class Controller implements Node {
 				synchronized (filesWithChunksNodeInformationMap) {
 					if (filesWithChunksNodeInformationMap.containsKey(filename)) {	
 						filesWithChunksNodeInformationMap.get(filename).put(chunkNumber, tempServersMap);
-						System.out.println("Filenames and chunks with respective chunk servers are: ");
-						for (String s : filesWithChunksNodeInformationMap.keySet()) {
-							System.out.println("Filename: " + s);
-							System.out.println("Chunk Number / shard number / Chunk Server: " + filesWithChunksNodeInformationMap.get(s));
+						if (DEBUG) {
+							System.out.println("Filenames and chunks with respective chunk servers are: ");
+							for (String s : filesWithChunksNodeInformationMap.keySet()) {
+								System.out.println("Filename: " + s);
+								System.out.println("Chunk Number / shard number / Chunk Server: " + filesWithChunksNodeInformationMap.get(s));
+							}
 						}
 					} else {
 						HashMap<Integer, HashMap<Integer, NodeInformation>> tempMap = new HashMap<Integer, HashMap<Integer, NodeInformation>>();
@@ -403,26 +404,25 @@ public class Controller implements Node {
 					// get the chunk servers associated with the file
 					HashMap<Integer, NodeInformation> shardsWithChunkServerMap = new HashMap<Integer, NodeInformation>();
 					
-					System.out.println("Attempting to get " + filename + " with Chunk " + chunkNumber + " from chunk server in the map."); 
+					if (DEBUG) { System.out.println("Attempting to get " + filename + " with Chunk " + chunkNumber + " from chunk server in the map."); }
 					
 					shardsWithChunkServerMap = filesWithChunksNodeInformationMap.get(filename).get(chunkNumber);
 					int totalNumberOfChunks = filesWithChunksNodeInformationMap.get(filename).size();
 					int shardNumberWithChunkServerSize = shardsWithChunkServerMap.size();
 					
-					System.out.println("Total Number of Chunks: " + totalNumberOfChunks);
-					System.out.println("Total Number of Shards: " + shardNumberWithChunkServerSize);
-					
+					if (DEBUG) { 
+						System.out.println("Total Number of Chunks: " + totalNumberOfChunks);
+						System.out.println("Total Number of Shards: " + shardNumberWithChunkServerSize);
+					}
 					// sned all fo the chunk servers back to the client
 					if (!shardsWithChunkServerMap.isEmpty()) {
-						// ControllerChunkServerToReadResponseToClient(int shardNumberWithChunkServerSize, HashMap<Integer, NodeInformation> shardNumberWithChunkServer, int chunkNumber, int totalNumberOfChunks, String filename)
-						
 						ControllerChunkServerToReadResponseToClient controllerReponse = new ControllerChunkServerToReadResponseToClient(shardNumberWithChunkServerSize, shardsWithChunkServerMap, chunkNumber, totalNumberOfChunks, filename);
 						
-						System.out.println("About to send a Client Read Request (Read Request type: " + controllerReponse.getType()  + ") to: " + clientNode.getNodeIPAddress());
+						if (DEBUG) { System.out.println("About to send a Client Read Request (Read Request type: " + controllerReponse.getType()  + ") to: " + clientNode.getNodeIPAddress()); }
 						if (clientNodesMap.containsKey(clientNode)) {
 							TCPSender sender = clientNodesMap.get(clientNode);
 
-							System.out.println("Sending now.");
+							if (DEBUG) { System.out.println("Sending now."); }
 							sender.sendData(controllerReponse.getBytes());
 						} else {
 							System.out.println("Can't find Client node to send to.");

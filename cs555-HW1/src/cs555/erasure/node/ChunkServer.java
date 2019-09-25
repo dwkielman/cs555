@@ -83,21 +83,12 @@ public class ChunkServer implements Node {
 	}
 	
 	public long getFreeSpaceAvailable() {
-		/**
-		File localDirectory = new File(this.tempFileLocationReplacement);
-		long directoryLength = 0;
-	    for (File file : localDirectory.listFiles()) {
-	        if (file.isFile())
-	        	directoryLength += file.length();
-	    }
-		**/
 		return new File(FILE_SPACE_LOCATION).getFreeSpace() - this.localFileSize.get();
 	}
 	
 	public int getNumberOfChunksStored() {
 		int totalNumberOfChunks = 0;
 		synchronized (filesWithChunkNumberWithShardNumber) {
-			// (HashMap.Entry<Integer, HashMap<Integer, byte[]>> entrySet : receivedFileWithChunkNumberWithShardWithBytes.entrySet()) {
 			for (HashMap.Entry<String, HashMap<Integer, ArrayList<Integer>>> entrySet : filesWithChunkNumberWithShardNumber.entrySet()) {
 				totalNumberOfChunks += entrySet.getValue().size();
 			}
@@ -108,7 +99,6 @@ public class ChunkServer implements Node {
 	public int getNumberOfShardsStored() {
 		int totalNumberOfShards = 0;
 		synchronized (filesWithChunkNumberWithShardNumber) {
-			// (HashMap.Entry<Integer, HashMap<Integer, byte[]>> entrySet : receivedFileWithChunkNumberWithShardWithBytes.entrySet()) {
 			for (HashMap<Integer, ArrayList<Integer>> entrySet : filesWithChunkNumberWithShardNumber.values()) {
 				totalNumberOfShards += entrySet.values().size();
 			}
@@ -356,12 +346,16 @@ public class ChunkServer implements Node {
 				
 				if (!tempMetadata.getChecksum().equals(storedChecksum)) {
 					System.out.println("Data has been corrupted, Marking Shard as corrupted.");
+					System.out.println("Filename requested: " + filename);
+					System.out.println("Chunk number requested: " + chunknumber);
+					System.out.println("Shard number requested: " + shardNumber);
+					System.out.println("Local data size: " + tempData.length);
 					isNotCorrupt = false;
 				}
 				Socket clientServer = new Socket(client.getNodeIPAddress(), client.getNodePortNumber());
 				
 				TCPSender clientSender = new TCPSender(clientServer);
-				
+				if (DEBUG) { System.out.println("shard number: " + shardNumber + " with is not corrupt: " + isNotCorrupt); }
 				ChunkServerSendChunkToClient chunkToSend = new ChunkServerSendChunkToClient(tempData, chunknumber, filename, totalNumberOfChunks, shardNumber, isNotCorrupt);
 				
 				clientSender.sendData(chunkToSend.getBytes());
@@ -372,14 +366,30 @@ public class ChunkServer implements Node {
 				e.printStackTrace();
 			}
 		} else {
-			// chunk has been deleted, need to report it to the controller and get missing chunk
-			System.out.println("Data has been deleted, sending error report to Controller and removing ChunkServer from available servers for this data. Please request another ChunkServer");
-			
-			System.out.println("Metadata files stored in memory: " + filesWithMetadataMap.toString());
+			// chunk has been deleted
+			System.out.println("Data has been deleted. Sending empty data.");
 			System.out.println("Filename requested: " + filename);
 			System.out.println("Chunk number requested: " + chunknumber);
 			System.out.println("Shard number requested: " + shardNumber);
+			
+			byte[] tempData = new byte[(int) fileToReturn.length()];
+			isNotCorrupt = false;
+			
+			Socket clientServer;
+			try {
+				clientServer = new Socket(client.getNodeIPAddress(), client.getNodePortNumber());
+				
+				TCPSender clientSender = new TCPSender(clientServer);
+				if (DEBUG) { System.out.println("shard number: " + shardNumber + " with is not corrupt: " + isNotCorrupt); }
+				ChunkServerSendChunkToClient chunkToSend = new ChunkServerSendChunkToClient(tempData, chunknumber, filename, totalNumberOfChunks, shardNumber, isNotCorrupt);
+				
+				clientSender.sendData(chunkToSend.getBytes());
 
+			} catch (UnknownHostException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
 		}
 
 		if (DEBUG) { System.out.println("end ChunkServer handleClientRequestToReadFromChunkServer"); }
