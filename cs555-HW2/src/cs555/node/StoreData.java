@@ -1,4 +1,4 @@
-package cs555.util;
+package cs555.node;
 
 public class StoreData {
 

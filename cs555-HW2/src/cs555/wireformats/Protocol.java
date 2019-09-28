@@ -6,7 +6,11 @@ package cs555.wireformats;
 
 public class Protocol {
 	
-	public static final int CONTROLLER_REGISTER_RESPONSE_TO_CHUNKSERVER = 6000;
+	public static final int DISCOVERY_REGISTER_RESPONSE_TO_PEER = 6000;
+	
+	public static final int PEER_REGISTER_REQUEST_TO_DISCOVERY = 7000;
+	
+	/**
 	public static final int CONTROLLER_REGISTER_RESPONSE_TO_CLIENT = 6001;
 	public static final int CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT = 6002;
 	public static final int CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT = 6003;
@@ -34,5 +38,6 @@ public class Protocol {
 	public static final int CLIENT_READ_REQUEST_TO_CHUNKSERVER = 8004;
 
 	public static final int IMPROVED_CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER = 7010;
+	**/
 	
 }

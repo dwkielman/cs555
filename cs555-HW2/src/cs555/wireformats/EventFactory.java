@@ -34,11 +34,11 @@ public class EventFactory {
 			if (DEBUG) { System.out.println("Message Type being passed is: " + type); }
 			
 			switch(type) {
-				// CONTROLLER_REGISTER_RESPONSE_TO_CHUNKSERVER = 6000
-			/**
-				case Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CHUNKSERVER:
-					event = new ControllerRegisterResponseToChunkServer(marshalledBytes);
+				// DISCOVERY_REGISTER_RESPONSE_TO_PEER = 6000
+				case Protocol.DISCOVERY_REGISTER_RESPONSE_TO_PEER:
+					event = new DiscoveryRegisterResponseToPeer(marshalledBytes);
 					break;
+					/**
 				// CONTROLLER_REGISTER_RESPONSE_TO_CLIENT = 6001
 				case Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CLIENT:
 					event = new ControllerRegisterResponseToClient(marshalledBytes);
@@ -71,10 +71,12 @@ public class EventFactory {
 				case Protocol.CONTROLLER_RELEASE_CLIENT:
 					event = new ControllerReleaseClient(marshalledBytes);
 					break;
-				// CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER = 7000
-				case Protocol.CHUNKSERVER_REGISTER_REQUEST_TO_CONTROLLER:
-					event = new ChunkServerRegisterRequestToController(marshalledBytes);
+					**/
+				// PEER_REGISTER_REQUEST_TO_DISCOVERY = 7000
+				case Protocol.PEER_REGISTER_REQUEST_TO_DISCOVERY:
+					event = new PeerRegisterRequestToDiscovery(marshalledBytes);
 					break;
+					/**
 				// CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER = 7001
 				case Protocol.CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER:
 					event = new ChunkServerSendChunkToLastChunkServer(marshalledBytes);
