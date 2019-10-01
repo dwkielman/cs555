@@ -7,8 +7,10 @@ package cs555.wireformats;
 public class Protocol {
 	
 	public static final int DISCOVERY_REGISTER_RESPONSE_TO_PEER = 6000;
+	public static final int DISCOVERY_SEND_RANDOM_NODE_TO_PEER = 6001;
 	
 	public static final int PEER_REGISTER_REQUEST_TO_DISCOVERY = 7000;
+	public static final int PEER_JOIN_REQUEST_TO_PEER = 7001;
 	
 	/**
 	public static final int CONTROLLER_REGISTER_RESPONSE_TO_CLIENT = 6001;

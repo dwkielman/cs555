@@ -17,6 +17,8 @@ import cs555.transport.TCPSender;
 import cs555.transport.TCPServerThread;
 import cs555.util.NodeInformation;
 import cs555.util.TableEntry;
+import cs555.wireformats.DiscoveryRegisterResponseToPeer;
+import cs555.wireformats.DiscoverySendRandomNodeToPeer;
 import cs555.wireformats.Event;
 import cs555.wireformats.PeerRegisterRequestToDiscovery;
 import cs555.wireformats.Protocol;
@@ -28,6 +30,7 @@ public class Discovery implements Node {
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
 	private LinkedList<PeerRegisterRequestToDiscovery> registrationLinkedList;
+	private HashMap<NodeInformation, TCPSender> peerNodesMap;
 	private static Discovery discovery;
 	private final static Logger LOGGER = Logger.getLogger(Discovery.class.getName());
 	private HashMap<String, TableEntry> nodeTableEntryMap;
@@ -35,7 +38,8 @@ public class Discovery implements Node {
 	private Discovery(int portNumber) {
 		this.portNumber = portNumber;
 		this.registrationLinkedList = new LinkedList<PeerRegisterRequestToDiscovery>();
-
+		this.peerNodesMap = new HashMap<NodeInformation, TCPSender>();
+		
 		try {
 			TCPServerThread controllerServerThread = new TCPServerThread(this.portNumber, this);
 			this.tCPServerThread = controllerServerThread;
@@ -169,8 +173,10 @@ public class Discovery implements Node {
 	private void handlePeerRegisterRequestToDiscovery(Event event) {
 		if (DEBUG) { System.out.println("begin Discovery PeerRegisterRequestToDiscovery"); }
 		PeerRegisterRequestToDiscovery peerRegisterRequest = (PeerRegisterRequestToDiscovery) event;
-		String IP = peerRegisterRequest.getIPAddress();
-		int port = peerRegisterRequest.getPortNumber();
+		
+		
+		String IP = peerRegisterRequest.getTableEntry().getNodeInformation().getNodeIPAddress();
+		int port = peerRegisterRequest.getTableEntry().getNodeInformation().getNodePortNumber();
 		
 		if (DEBUG) { System.out.println("Discovery received a message type: " + peerRegisterRequest.getType()); }
 		
@@ -178,54 +184,79 @@ public class Discovery implements Node {
 		
 		NodeInformation ni = new NodeInformation(IP, port);
 
-		// need to now perform some functionality to strategically add a new peer node to the table
-		
-		try {
-			Socket socket = new Socket(IP, port);
-			TCPSender sender = new TCPSender(socket);
-			
-			byte status = 0;
-			String message = "";
-			
-			// success, node is not currently registered so adding to the map of nodes
-			/**
-			synchronized (chunkServerNodesMap) {
-				if (!this.chunkServerNodesMap.containsKey(ni)) {
-					this.chunkServerNodesMap.put(ni, sender);
-					this.chunkServerHeartbeatMetadaList.put(ni, hbm);
-					this.tempLiveNodes.add(ni);
-					System.out.println("Chunk Server Registration request successful. The number of Chunk Servers currently running on the Controller is (" + this.chunkServerNodesMap.size() + ")");
-					status = (byte) 1;
-					message = "Chunk Server Registered";
-				} else {
-					status = (byte) 0;
-					message = "Chunk Server already registered. No action taken";
-				}
-			}
-			
-			DiscoveryRegisterResponseToPeer discoveryRegisterResponse = new DiscoveryRegisterResponseToPeer(status, message);
-			sender.sendData(discoveryRegisterResponse.getBytes());
-			**/
-		} catch (IOException ioe) {
-			ioe.printStackTrace();
-		}
+		// need to now perform some functionality to add a new peer node to the table carefully
+		registerNewNode(peerRegisterRequest.getTableEntry());
+
 		if (DEBUG) { System.out.println("end Discovery handlePeerRegisterRequestToDiscovery"); }
 	}
 	
 	
+	
 	private void registerNewNode(TableEntry te) {
+		byte status = 0;
+		String message = "";
 		
 		synchronized (nodeTableEntryMap) {
 			if (!nodeTableEntryMap.containsKey(te.getIdentifier())) {
 				String randomNode = getRandomNode();
 				if (randomNode != null) {
 					// need to tell the random node to insert this node into the system
+					// send a message to the new node to insert the node at this random node and update the table and leaf set
+					try {
+						TableEntry registeredEntry = nodeTableEntryMap.get(randomNode);
+						
+						DiscoverySendRandomNodeToPeer sendRandomNode = new DiscoverySendRandomNodeToPeer(registeredEntry);
+						
+						Socket socket = new Socket(te.getNodeInformation().getNodeIPAddress(), te.getNodeInformation().getNodePortNumber());
+						TCPSender sender = new TCPSender(socket);
+						
+						sender.sendData(sendRandomNode.getBytes());
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
 					
 				} else {
-					System.out.println("ERROR: Getting node in system did not work.");
+					// could be empty right now, simply add the first one then as the first node
+					nodeTableEntryMap.put(te.getIdentifier(), te);
+
+					try {
+						Socket socket = new Socket(te.getNodeInformation().getNodeIPAddress(), te.getNodeInformation().getNodePortNumber());
+						TCPSender sender;
+						
+						sender = new TCPSender(socket);
+						peerNodesMap.put(te.getNodeInformation(), sender);
+						
+						// send message that peer node is successfully registered
+						status = 1;
+						message = "Peer Node is the first Registered";
+						DiscoveryRegisterResponseToPeer discoveryResponse = new DiscoveryRegisterResponseToPeer(status, message);
+						
+						sender.sendData(discoveryResponse.getBytes());
+						
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+					
+					
 				}
 			} else {
-				System.out.println("Node already exists in the map.");
+				System.out.println("Node Identifer already exists in the map.");
+				// send a rejection to the peer so that it registers again
+				status = 2;
+				message = "Node Identifer already exists in the map";
+				DiscoveryRegisterResponseToPeer discoveryResponse = new DiscoveryRegisterResponseToPeer(status, message);
+				
+				try {
+					Socket socket = new Socket(te.getNodeInformation().getNodeIPAddress(), te.getNodeInformation().getNodePortNumber());
+					TCPSender sender = new TCPSender(socket);
+					
+					sender.sendData(discoveryResponse.getBytes());
+					
+				} catch (UnknownHostException e) {
+					e.printStackTrace();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
 			}
 		}
 	}
@@ -244,11 +275,7 @@ public class Discovery implements Node {
 		
 		return randomNodeIdentifier;
 	}
-	
-	private void detectCollisions() {
-		
-	}
-	
+
 	private void listNodes() {
 		
 	}
