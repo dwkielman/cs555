@@ -13,6 +13,9 @@ public class Protocol {
 	public static final int PEER_JOIN_REQUEST_TO_PEER = 7001;
 	public static final int PEER_FORWARD_JOIN_REQUEST_TO_PEER = 7002;
 	public static final int PEER_JOIN_REQUEST_FOUND_DESTINATION_TO_PEER = 7003;
+	public static final int PEER_UPDATE_LEFT_LEAF_PEER = 7004;
+	public static final int PEER_UPDATE_RIGHT_LEAF_PEER = 7005;
+	public static final int PEER_UPDATE_ROUTING_TABLE_TO_PEER = 7006;
 	
 	/**
 	public static final int CONTROLLER_REGISTER_RESPONSE_TO_CLIENT = 6001;

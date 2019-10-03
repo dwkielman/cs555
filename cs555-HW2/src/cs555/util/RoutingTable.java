@@ -155,4 +155,8 @@ public class RoutingTable {
 	public int getSizeOfRoutingTable() {
 		return this.table.size();
 	}
+	
+	public HashMap<Integer, HashMap<String, TableEntry>> getTable() {
+		return this.table;
+	}
 }

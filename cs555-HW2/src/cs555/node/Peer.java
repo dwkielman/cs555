@@ -7,6 +7,7 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import cs555.transport.TCPReceiverThread;
@@ -23,6 +24,9 @@ import cs555.wireformats.PeerForwardJoinRequestToPeer;
 import cs555.wireformats.PeerJoinRequestFoundDestinationToPeer;
 import cs555.wireformats.PeerJoinRequestToPeer;
 import cs555.wireformats.PeerRegisterRequestToDiscovery;
+import cs555.wireformats.PeerUpdateLeftLeafPeerNode;
+import cs555.wireformats.PeerUpdateRightLeafPeerNode;
+import cs555.wireformats.PeerUpdateRoutingTableToPeerNode;
 import cs555.wireformats.Protocol;
 
 public class Peer implements Node {
@@ -137,6 +141,18 @@ public class Peer implements Node {
 			// PEER_JOIN_REQUEST_FOUND_DESTINATION_TO_PEER = 7003
 			case Protocol.PEER_JOIN_REQUEST_FOUND_DESTINATION_TO_PEER:
 				handlePeerJoinRequestFoundDestinationToPeer(event);
+				break;
+			// PEER_UPDATE_LEFT_LEAF_PEER = 7004
+			case Protocol.PEER_UPDATE_LEFT_LEAF_PEER:
+				handlePeerUpdateLeftLeafPeerNode(event);
+				break;
+			// PEER_UPDATE_RIGHT_LEAF_PEER = 7005
+			case Protocol.PEER_UPDATE_RIGHT_LEAF_PEER:
+				handlePeerUpdateRightLeafPeerNode(event);
+				break;
+			// PEER_UPDATE_ROUTING_TABLE_TO_PEER
+			case Protocol.PEER_UPDATE_ROUTING_TABLE_TO_PEER:
+				handlePeerUpdateRoutingTableToPeerNode(event);
 				break;
 			
 		/**
@@ -373,12 +389,287 @@ public class Peer implements Node {
 	
 	// a lot of the logic here should be similar to above, copy/paste and edit as needed
 	private void handlePeerForwardJoinRequestToPeer(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handlePeerForwardJoinRequestToPeer"); }
+		PeerForwardJoinRequestToPeer forwardJoinRequest = (PeerForwardJoinRequestToPeer) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + forwardJoinRequest.getType()); }
 		
+		ArrayList<String> traceList = forwardJoinRequest.getTraceList();
+		
+		TableEntry joiningTableEntry = forwardJoinRequest.getTableEntry();
+		
+		String newIdentifer = joiningTableEntry.getIdentifier();
+		
+		RoutingTable newIdentiferRoutingTable = forwardJoinRequest.getRoutingTable();
+		
+		System.out.println("");
+        System.out.println("[INFO] Join request from PEER : " + newIdentifer);
+		
+		int hopCount = forwardJoinRequest.getHopCount();
+		hopCount++;
+		
+		// need to update the joining peer's routing table with information about all of the entries currently in the routing table
+		generateEntriesInRoutingTable(newIdentifer, newIdentiferRoutingTable);
+		
+		// need to find what the next peer to send the joining peer to
+		TableEntry nextPeer = lookup(newIdentifer);
+		
+		// no other entries yet, the identifer is itself
+		if (nextPeer.getIdentifier().equalsIgnoreCase(newIdentifer)) {
+			int index = getIndexOfPrefixNotMatching(nextPeer.getIdentifier(), this.peerNodeIdentifier);
+			String lookupEntryString = nextPeer.getIdentifier().substring(0, index + 1);
+			
+			synchronized (this.routingTable) {
+				HashMap<String, TableEntry> row = this.routingTable.getRoutingTableEntry(index);
+				TableEntry te = row.get(lookupEntryString);
+				if (te.getIdentifier().equals(nextPeer.getIdentifier())) {
+					row.put(lookupEntryString, null);
+				}
+			}
+			nextPeer = lookup(newIdentifer);
+		}
+		
+		if (nextPeer.getNodeInformation().equals(joiningTableEntry.getNodeInformation())) {
+			int index = getIndexOfPrefixNotMatching(nextPeer.getIdentifier(), this.peerNodeIdentifier);
+			String lookupEntryString = nextPeer.getIdentifier().substring(0, index + 1);
+			
+			synchronized (this.routingTable) {
+				HashMap<String, TableEntry> row = this.routingTable.getRoutingTableEntry(index);
+				TableEntry te = row.get(lookupEntryString);
+				if (te.getIdentifier().equals(nextPeer.getIdentifier())) {
+					row.put(lookupEntryString, null);
+				}
+			}
+			nextPeer = lookup(newIdentifer);
+		}
+		
+		// this node is the final destination for the joining peer
+		if (nextPeer.getIdentifier().equals(this.peerNodeIdentifier)) {
+			System.out.println("[INFO] Destination Found PEER : " + this.peerNodeIdentifier);
+			TableEntry leftLeafEntry = null;
+			TableEntry rightLeafEntry = null;
+			
+			synchronized (this.leftLeafTableEntry) {
+				leftLeafEntry = this.leftLeafTableEntry;
+			}
+			
+			synchronized (this.rightLeafTableEntry) {
+				rightLeafEntry = this.rightLeafTableEntry;
+			}
+			
+			PeerJoinRequestFoundDestinationToPeer foundDestination = new PeerJoinRequestFoundDestinationToPeer(this.peerTableEntry, leftLeafEntry, rightLeafEntry, newIdentiferRoutingTable, traceList.size(), traceList, hopCount);
+			
+			try {
+				Socket socket = new Socket(joiningTableEntry.getNodeInformation().getNodeIPAddress(), joiningTableEntry.getNodeInformation().getNodePortNumber());
+				TCPSender sender = new TCPSender(socket);
+				sender.sendData(foundDestination.getBytes());
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+			
+		// forward the joining peer to the next node to find its placement
+		} else {
+			System.out.println("[INFO] Next PEER : " + nextPeer.getIdentifier());
+			traceList.add(nextPeer.getIdentifier());
+			
+			PeerForwardJoinRequestToPeer forwardRequest = new PeerForwardJoinRequestToPeer(joiningTableEntry, newIdentiferRoutingTable, traceList.size(), traceList, hopCount);
+			
+			try {
+				Socket socket = new Socket(nextPeer.getNodeInformation().getNodeIPAddress(), nextPeer.getNodeInformation().getNodePortNumber());
+				TCPSender sender = new TCPSender(socket);
+				sender.sendData(forwardRequest.getBytes());
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		
+		if (DEBUG) { System.out.println("end Peer handlePeerForwardJoinRequestToPeer"); }
+	}
+
+	private void handlePeerJoinRequestFoundDestinationToPeer(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handlePeerJoinRequestFoundDestinationToPeer"); }
+		PeerJoinRequestFoundDestinationToPeer foundDestinationForJoinRequest = (PeerJoinRequestFoundDestinationToPeer) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + foundDestinationForJoinRequest.getType()); }
+		
+		this.routingTable = foundDestinationForJoinRequest.getRoutingTable();
+		
+		// need to populate the routing table accordingly
+		// this may not be necessary but would need to test and confirm
+		synchronized (this.routingTable) {
+			for (Entry<Integer, HashMap<String, TableEntry>> entrySet : this.routingTable.getTable().entrySet()) {
+                int key = entrySet.getKey();
+                HashMap<String, TableEntry> row = entrySet.getValue();
+                for (HashMap.Entry<String, TableEntry> rowEntrySet : row.entrySet()) {
+                    String identifer = rowEntrySet.getKey();
+                    //TableEntry entry = rowEntrySet.getValue();
+                    if (identifer.substring(0, key + 1).equalsIgnoreCase(this.peerNodeIdentifier.substring(0, key + 1))) {
+                        row.put(identifer, null);
+                    }
+                }
+            }
+		}
+		
+		TableEntry leftLeaf = foundDestinationForJoinRequest.getLeftLeafTableEntry();
+		TableEntry rightLeaf = foundDestinationForJoinRequest.getRightLeafTableEntry();
+		TableEntry destinationTableEntry = foundDestinationForJoinRequest.getDestinationTableEntry();
+		ArrayList<String> traceList = foundDestinationForJoinRequest.getTraceList();
+		int hopCount = foundDestinationForJoinRequest.getHopCount();
+		hopCount++;
+		
+		System.out.println("");
+        System.out.println("[INFO] Info received from Destination with ID : " + destinationTableEntry.getIdentifier());
+        System.out.println("[INFO] HOPCOUNT: " + hopCount);
+        
+        String traceString = "";
+        for (String s : traceList) {
+        	traceString = traceString + s + "-";
+        }
+        
+        System.out.println("[INFO] TRACE: " + traceString);
+		
+        // populate leaf sets with their data
+        if (leftLeaf != null && rightLeaf != null && destinationTableEntry != null) {
+        	int leftLeafDistanceFromDestination = distanceCounterClockwiseSearch(destinationTableEntry.getIdentifier(), leftLeaf.getIdentifier());
+        	int rightLeafDistanceFromDestination = distanceClockwiseSearch(destinationTableEntry.getIdentifier(), rightLeaf.getIdentifier());
+        	
+        	int thisPeerNodeDistanceFromDestinationToLeft = distanceCounterClockwiseSearch(destinationTableEntry.getIdentifier(), this.peerNodeIdentifier);
+        	int thisPeerNodeDistanceFromDestinationToRight = distanceClockwiseSearch(destinationTableEntry.getIdentifier(), this.peerNodeIdentifier);
+        	
+        	// find which one is closer between the leafs passed and the destination node and set myself in accordingly
+        	if (thisPeerNodeDistanceFromDestinationToLeft < leftLeafDistanceFromDestination) {
+        		this.leftLeafTableEntry = leftLeaf;
+        		this.rightLeafTableEntry = destinationTableEntry;
+        	} else if (thisPeerNodeDistanceFromDestinationToRight < rightLeafDistanceFromDestination) {
+        		this.leftLeafTableEntry = destinationTableEntry;
+        		this.rightLeafTableEntry = rightLeaf;
+        	}
+    	// left leaf and right leaf are empty, no other peers in the system yet
+        } else if (destinationTableEntry != null) {
+        	this.leftLeafTableEntry = destinationTableEntry;
+        	this.rightLeafTableEntry = destinationTableEntry;
+        }
+        
+        // need to notify the leaves that this node is now in the system as well as all of the nodes in the routing table
+        // update the left leaf
+        PeerUpdateLeftLeafPeerNode updateLeftLeaf = new PeerUpdateLeftLeafPeerNode(this.peerTableEntry);
+        synchronized (this.leftLeafTableEntry) {
+        	try {
+				Socket socket = new Socket(this.leftLeafTableEntry.getNodeInformation().getNodeIPAddress(), this.leftLeafTableEntry.getNodeInformation().getNodePortNumber());
+				
+				TCPSender sender = new TCPSender(socket);
+				sender.sendData(updateLeftLeaf.getBytes());
+				
+			} catch (UnknownHostException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+        }
+        
+        // update the right leaf
+        PeerUpdateRightLeafPeerNode updateRightLeaf = new PeerUpdateRightLeafPeerNode(this.peerTableEntry);
+        synchronized (this.rightLeafTableEntry) {
+        	try {
+				Socket socket = new Socket(this.rightLeafTableEntry.getNodeInformation().getNodeIPAddress(), this.rightLeafTableEntry.getNodeInformation().getNodePortNumber());
+				
+				TCPSender sender = new TCPSender(socket);
+				sender.sendData(updateRightLeaf.getBytes());
+				
+			} catch (UnknownHostException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+        }
+        
+        // update the routing table entries that are registered
+        PeerUpdateRoutingTableToPeerNode updateRoutingTable = new PeerUpdateRoutingTableToPeerNode(this.peerTableEntry);
+        
+        synchronized (this.routingTable) {
+			for (Entry<Integer, HashMap<String, TableEntry>> entrySet : this.routingTable.getTable().entrySet()) {
+                //int key = entrySet.getKey();
+                HashMap<String, TableEntry> row = entrySet.getValue();
+                for (HashMap.Entry<String, TableEntry> rowEntrySet : row.entrySet()) {
+                    String identifer = rowEntrySet.getKey();
+                    TableEntry entry = rowEntrySet.getValue();
+                    if (entry != null) {
+                    	try {
+            				Socket socket = new Socket(entry.getNodeInformation().getNodeIPAddress(), entry.getNodeInformation().getNodePortNumber());
+            				
+            				TCPSender sender = new TCPSender(socket);
+            				sender.sendData(updateRoutingTable.getBytes());
+            				
+            			} catch (UnknownHostException e) {
+            				e.printStackTrace();
+            			} catch (IOException e) {
+            				e.printStackTrace();
+            			} catch (Exception e) {
+            				row.put(identifer, null);
+            			}
+                    }
+                }
+            }
+		}
+        
+        System.out.println("");
+        //printRoutingTable();
+        System.out.println("");
+       // printLeafset();
+        System.out.println("");
+        
+		if (DEBUG) { System.out.println("end Peer handlePeerJoinRequestFoundDestinationToPeer"); }
 	}
 	
-	// this will be a little different, most likely needs to be set to initialized once finished finding the destination node
-	private void handlePeerJoinRequestFoundDestinationToPeer(Event event) {
+	private void handlePeerUpdateLeftLeafPeerNode(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handlePeerUpdateLeftLeafPeerNode"); }
+		PeerUpdateLeftLeafPeerNode updateLeftLeaf = (PeerUpdateLeftLeafPeerNode) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + updateLeftLeaf.getType()); }
 		
+		TableEntry newTableEntry = updateLeftLeaf.getTableEntry();
+		
+		synchronized (this.rightLeafTableEntry) {
+			this.rightLeafTableEntry = newTableEntry;
+		}
+		
+		// DANIEL KIELMAN : NEED TO UPDATE THIS LATER WITH LOGIC FOR INCLUDING THE STORED DATA INFORMATION AND FORWARDING IT TO THE NEWLY ADDED LEAF NODE
+		
+		if (DEBUG) { System.out.println("end Peer handlePeerUpdateLeftLeafPeerNode"); }
+	}
+	
+	private void handlePeerUpdateRightLeafPeerNode(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handlePeerUpdateRightLeafPeerNode"); }
+		PeerUpdateRightLeafPeerNode updateRightLeaf = (PeerUpdateRightLeafPeerNode) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + updateRightLeaf.getType()); }
+		
+		TableEntry newTableEntry = updateRightLeaf.getTableEntry();
+		
+		synchronized (this.leftLeafTableEntry) {
+			this.leftLeafTableEntry = newTableEntry;
+		}
+		
+		// DANIEL KIELMAN : NEED TO UPDATE THIS LATER WITH LOGIC FOR INCLUDING THE STORED DATA INFORMATION AND FORWARDING IT TO THE NEWLY ADDED LEAF NODE
+		
+		if (DEBUG) { System.out.println("end Peer handlePeerUpdateRightLeafPeerNode"); }
+	}
+	
+	private void handlePeerUpdateRoutingTableToPeerNode(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handlePeerUpdateRoutingTableToPeerNode"); }
+		PeerUpdateRoutingTableToPeerNode updateRoutingTable = (PeerUpdateRoutingTableToPeerNode) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + updateRoutingTable.getType()); }
+		
+		TableEntry newTableEntry = updateRoutingTable.getTableEntry();
+		String newTableEntryIdentifer = newTableEntry.getIdentifier();
+		
+		int index = getIndexOfPrefixNotMatching(this.peerNodeIdentifier, newTableEntryIdentifer);
+		String identifer = newTableEntryIdentifer.substring(0, index + 1);
+		
+		synchronized (this.routingTable) {
+			HashMap<String, TableEntry> row = this.routingTable.getRoutingTableEntry(index);
+			TableEntry currentEntry = row.get(identifer);
+			if (currentEntry == null) {
+				row.put(identifer, newTableEntry);
+			}
+		}
+		if (DEBUG) { System.out.println("end Peer handlePeerUpdateRoutingTableToPeerNode"); }
 	}
 	
 	private TableEntry lookup(String newIdentifer) {
