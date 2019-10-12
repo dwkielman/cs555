@@ -9,22 +9,23 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 
 public class RoutingTable {
 	
 	private final static int NUMBER_OF_ROWS = 4;
 	private final static int HEX_DIGITS = 16;
 	
-	private String identifer;
+	private String identifier;
 	private HashMap<Integer, HashMap<String, TableEntry>> table;
 	
-	public RoutingTable(String identifer) {
-		this.identifer = identifer.toUpperCase();
+	public RoutingTable(String identifier) {
+		this.identifier = identifier.toUpperCase();
 		this.table = new HashMap<Integer, HashMap<String, TableEntry>>();
 	}
 
-	public RoutingTable(String identifer, HashMap<Integer, HashMap<String, TableEntry>> table) {
-		this.identifer = identifer.toUpperCase();
+	public RoutingTable(String identifier, HashMap<Integer, HashMap<String, TableEntry>> table) {
+		this.identifier = identifier.toUpperCase();
 		this.table = table;
 	}
 	
@@ -32,11 +33,11 @@ public class RoutingTable {
 		ByteArrayInputStream baInputStream = new ByteArrayInputStream(marshalledBytes);
 		DataInputStream din = new DataInputStream(new BufferedInputStream(baInputStream));
 		
-		// identifer
-		int identiferLength = din.readInt();
-		byte[] identiferBytes = new byte[identiferLength];
-		din.readFully(identiferBytes);
-		this.identifer = new String(identiferBytes);
+		// identifier
+		int identifierLength = din.readInt();
+		byte[] identifierBytes = new byte[identifierLength];
+		din.readFully(identifierBytes);
+		this.identifier = new String(identifierBytes);
 		
 		// table
 		int numberOfEntries = din.readInt();
@@ -77,11 +78,11 @@ public class RoutingTable {
 		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
 		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
 		
-		// identifer
-		byte[] identiferBytes = this.identifer.getBytes();
-		int identiferLength = identiferBytes.length;
-		dout.writeInt(identiferLength);
-		dout.write(identiferBytes);
+		// identifier
+		byte[] identifierBytes = this.identifier.getBytes();
+		int identifierLength = identifierBytes.length;
+		dout.writeInt(identifierLength);
+		dout.write(identifierBytes);
 		
 		// table
 		HashMap<Integer, HashMap<String, TableEntry>> table = this.table;
@@ -143,9 +144,9 @@ public class RoutingTable {
 		// with 16-bit identifiers we will have 4 rows
 		for (int i=0; i < NUMBER_OF_ROWS; i++) {
 			HashMap<String, TableEntry> row = new HashMap<String, TableEntry>();
-			// table has as many rows as there are hexadecimal digits in the peer identifer
+			// table has as many rows as there are hexadecimal digits in the peer identifier
 			for (int j=0; j < HEX_DIGITS; j++) {
-				String nodeHandle = this.identifer.substring(0, i) + Integer.toHexString(j).toUpperCase();
+				String nodeHandle = this.identifier.substring(0, i) + Integer.toHexString(j).toUpperCase();
 				row.put(nodeHandle, null);
 			}
 			this.table.put(i, row);
@@ -158,5 +159,17 @@ public class RoutingTable {
 	
 	public HashMap<Integer, HashMap<String, TableEntry>> getTable() {
 		return this.table;
+	}
+	
+	public void printRoutingTable() {
+		System.out.println("=======================================================================");
+        System.out.println("==================== ROUTING TABLE FOR NODE: " + identifier + " =====================");
+        System.out.println("=======================================================================");
+        for (Entry<Integer, HashMap<String, TableEntry>> entrySet : table.entrySet()) {
+            Integer key = entrySet.getKey();
+            Map<String, TableEntry> value = entrySet.getValue();
+            System.out.println("Entry Key: " + key + " : TableEntry Value: " + value);
+        }
+        System.out.println("=======================================================================");
 	}
 }

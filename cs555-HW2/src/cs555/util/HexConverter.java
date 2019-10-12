@@ -8,7 +8,7 @@ public class HexConverter {
 	* @param buf
 	* @return
 	*/
-	public String convertBytesToHex(byte[] buf) {
+	public static String convertBytesToHex(byte[] buf) {
 		
 		StringBuffer strBuf = new StringBuffer();
 		
@@ -33,7 +33,7 @@ public class HexConverter {
 	* @param hexString
 	* @return
 	*/
-	public byte[] convertHexToBytes(String hexString) {
+	public static byte[] convertHexToBytes(String hexString) {
 	
 		int size = hexString.length();
 		byte[] buf = new byte[size / 2];

@@ -1,14 +1,20 @@
 package cs555.node;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Scanner;
 import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Logger;
 
 import cs555.transport.TCPReceiverThread;
 import cs555.transport.TCPSender;
@@ -20,14 +26,31 @@ import cs555.util.TableEntry;
 import cs555.wireformats.DiscoveryRegisterResponseToPeer;
 import cs555.wireformats.DiscoverySendRandomNodeToPeer;
 import cs555.wireformats.Event;
+import cs555.wireformats.PeerForwardFileToPeer;
 import cs555.wireformats.PeerForwardJoinRequestToPeer;
+import cs555.wireformats.PeerForwardReadRequestToPeer;
+import cs555.wireformats.PeerForwardStoreRequestToPeer;
 import cs555.wireformats.PeerJoinRequestFoundDestinationToPeer;
 import cs555.wireformats.PeerJoinRequestToPeer;
+import cs555.wireformats.PeerLeftLeafRouteTraceToPeer;
+import cs555.wireformats.PeerLeftLeafUpdateCompleteToPeer;
 import cs555.wireformats.PeerRegisterRequestToDiscovery;
+import cs555.wireformats.PeerRemoveFromRoutingTableToPeer;
+import cs555.wireformats.PeerRemovePeerToDiscovery;
+import cs555.wireformats.PeerRemoveToLeftLeafPeer;
+import cs555.wireformats.PeerRemoveToRightLeafPeer;
+import cs555.wireformats.PeerRightLeafRouteTraceToPeer;
+import cs555.wireformats.PeerRightLeafUpdateCompleteToPeer;
+import cs555.wireformats.PeerSendFileToStoreData;
+import cs555.wireformats.PeerStoreDestinationToStoreData;
+import cs555.wireformats.PeerUpdateCompleteAndInitializedToDiscovery;
 import cs555.wireformats.PeerUpdateLeftLeafPeerNode;
 import cs555.wireformats.PeerUpdateRightLeafPeerNode;
 import cs555.wireformats.PeerUpdateRoutingTableToPeerNode;
 import cs555.wireformats.Protocol;
+import cs555.wireformats.StoreDataSendFileToPeer;
+import cs555.wireformats.StoreDataSendReadRequestToPeer;
+import cs555.wireformats.StoreDataSendStoreRequestToPeer;
 
 public class Peer implements Node {
 
@@ -42,22 +65,30 @@ public class Peer implements Node {
 	private TCPReceiverThread peerReceiverThread;
 	private NodeInformation peerNodeInformation;
 	private AtomicBoolean initialized;
+	private AtomicBoolean leftLeafComplete;
+	private AtomicBoolean rightLeafComplete;
 	private TableEntry peerTableEntry;
 	private TableEntry leftLeafTableEntry;
 	private TableEntry rightLeafTableEntry;
 	private RoutingTable routingTable;
+	private String storedFileLocation;
+	private HashMap<String, String> filesWithKeyMap;
 	private static Peer peer;
+	private final static Logger LOGGER = Logger.getLogger(Discovery.class.getName());
 	
 	private static final int SIZE_OF_CHUNK = 1024 * 64;
 	
-	private Peer(String controllerIPAddress, int controllerPortNumber, int peerPortNumber, String peerIdentifer) {
+	private Peer(String controllerIPAddress, int controllerPortNumber, int peerPortNumber, String peerIdentifier) {
 		this.discoveryNodeInformation = new NodeInformation(controllerIPAddress, controllerPortNumber);
-		this.peerNodeIdentifier = peerIdentifer;
+		this.peerNodeIdentifier = peerIdentifier;
 		this.initialized = new AtomicBoolean(false);
+		this.leftLeafComplete = new AtomicBoolean(false);
+		this.rightLeafComplete = new AtomicBoolean(false);
 		this.leftLeafTableEntry = null;
 		this.rightLeafTableEntry = null;
 		this.routingTable = new RoutingTable(this.peerNodeIdentifier);
 		this.routingTable.generateRoutingTable();
+		this.filesWithKeyMap = new HashMap<String, String>();
 		
 		try {
 			TCPServerThread serverThread = new TCPServerThread(peerPortNumber, this);
@@ -69,13 +100,23 @@ public class Peer implements Node {
 			
 			this.localHostIPAddress = InetAddress.getLocalHost().getCanonicalHostName();
 			
-			this.peerTableEntry = new TableEntry(peerNodeIdentifier, discoveryNodeInformation, localHostIPAddress);
+			this.peerNodeInformation = new NodeInformation(this.localHostIPAddress, this.localHostPortNumber);
+			
+			this.peerTableEntry = new TableEntry(peerNodeIdentifier, peerNodeInformation, localHostIPAddress);
+
+			
+			this.storedFileLocation = "/tmp/stored_dkielman/";
+			//System.out.println("Data will be stored at: " + this.storedFileLocation);
+			LOGGER.info("Data will be stored at: " + this.storedFileLocation);
+			
+			//System.out.println("Peer Is Running and beginning initialization with following details: Identifier: " + this.peerTableEntry.getIdentifier() + " : Nickname: " + this.peerTableEntry.getNickname() + " : NodeInformation: " + this.peerTableEntry.getNodeInformation());
+			LOGGER.info("Peer Is Running and beginning initialization with following details: Identifier: " + this.peerTableEntry.getIdentifier() + " : Nickname: " + this.peerTableEntry.getNickname() + " : NodeInformation: " + this.peerTableEntry.getNodeInformation());
 			
 			if (DEBUG) { System.out.println("My host IP Address is: " + this.localHostIPAddress); }
 		} catch (UnknownHostException uhe) {
 			uhe.printStackTrace();
 		}
-		this.peerNodeInformation = new NodeInformation(this.localHostIPAddress, this.localHostPortNumber);
+		
 		// Once the initialization is complete, client should send a registration request to the controller.
 		connectToDisocvery();
 	}
@@ -85,16 +126,16 @@ public class Peer implements Node {
 		String discoveryIPAddress = args[0];
 		int discoveryPortNumber = 0;
 		int peerPortNumber = 0;
-		String peerIdentifer = null;
+		String peerIdentifier = null;
 		
-		// requires 3 argument to initialize a peer
+		// requires 3 argument to initialize a peer, auto-generate identifier in this case
 		if (args.length == 3) {
-			peerIdentifer = generateIdentifer();
-		}
-		if (args.length == 4) {
-			peerIdentifer = args[3];
-        } else if (args.length != 3) {
-        	System.out.println("Invalid Arguments. Must include a Discovery IP Address, Port Number, Peer's Port Number and an optional identifier.");
+			peerIdentifier = generateIdentifier();
+		} else if (args.length == 4) {
+			peerIdentifier = args[3];
+        } else {
+        	//System.out.println("Invalid Arguments. Must include a Discovery IP Address, Discovery Port Number, Peer's Port Number and an optional identifier.");
+        	LOGGER.severe("Invalid Arguments. Must include a Discovery IP Address, Discovery Port Number, Peer's Port Number and an optional identifier.");
             return;
         }
 		
@@ -102,19 +143,20 @@ public class Peer implements Node {
 			discoveryPortNumber = Integer.parseInt(args[1]);
 			peerPortNumber = Integer.parseInt(args[2]);
 		} catch (NumberFormatException nfe) {
-			System.out.println("Invalid argument. Arguments must be a number.");
+			//System.out.println("Invalid argument. Arguments must be a number.");
+			LOGGER.severe("Invalid argument. Arguments must be a number.");
 			nfe.printStackTrace();
 		}
-		peer = new Peer(discoveryIPAddress, discoveryPortNumber, peerPortNumber, peerIdentifer);
+		peer = new Peer(discoveryIPAddress, discoveryPortNumber, peerPortNumber, peerIdentifier);
 		
 	}
 	
-	private static String generateIdentifer() {
-		Long l1 = System.nanoTime();
-        String hex = Long.toHexString(l1);
-        String randomID = hex.substring(hex.length() - 4);
-        randomID = randomID.toUpperCase();
-        return randomID;
+	private static String generateIdentifier() {
+		Long timeLong = System.nanoTime();
+        String timeHexString = Long.toHexString(timeLong);
+        String randomIdentifier = timeHexString.substring(timeHexString.length() - 4);
+        randomIdentifier = randomIdentifier.toUpperCase();
+        return randomIdentifier;
 	}
 
 	@Override
@@ -150,33 +192,62 @@ public class Peer implements Node {
 			case Protocol.PEER_UPDATE_RIGHT_LEAF_PEER:
 				handlePeerUpdateRightLeafPeerNode(event);
 				break;
-			// PEER_UPDATE_ROUTING_TABLE_TO_PEER
+			// PEER_UPDATE_ROUTING_TABLE_TO_PEER = 7006
 			case Protocol.PEER_UPDATE_ROUTING_TABLE_TO_PEER:
 				handlePeerUpdateRoutingTableToPeerNode(event);
 				break;
-			
-		/**
-			// CONTROLLER_REGISTER_RESPONSE_TO_CLIENT = 6001
-			case Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CLIENT:
-				handleControllerRegisterResponse(event);	
+			// PEER_FORWARD_STORE_REQUEST_TO_PEER = 7008
+			case Protocol.PEER_FORWARD_STORE_REQUEST_TO_PEER:
+				handlePeerForwardStoreRequestToPeer(event);
 				break;
-			// CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT = 6002
-			case Protocol.CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT:
-				handleControllerChunkServersResponse(event);
+			//PEER_FORWARD_READ_REQUEST_TO_PEER = 7010
+			case Protocol.PEER_FORWARD_READ_REQUEST_TO_PEER:
+				handlePeerForwardReadRequestToPeer(event);
 				break;
-			// CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT = 6003
-			case Protocol.CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT:
-				handleControllerChunkServerToReadResponseToClient(event);
+			// PEER_FORWARD_FILE_TO_PEER = 7011
+			case Protocol.PEER_FORWARD_FILE_TO_PEER:
+				handlePeerForwardFileToPeer(event);
 				break;
-			// CONTROLLER_RELEASE_CLIENT = 6008
-			case Protocol.CONTROLLER_RELEASE_CLIENT:
-				handleControllerReleaseClient(event);
+			// PEER_LEFT_LEAF_UPDATE_COMPLETE_TO_PEER = 7012
+			case Protocol.PEER_LEFT_LEAF_UPDATE_COMPLETE_TO_PEER:
+				handlePeerLeftLeafUpdateCompleteToPeer(event);
 				break;
-			// CHUNKSERVER_SEND_CHUNK_TO_CLIENT = 7002
-			case Protocol.CHUNKSERVER_SEND_CHUNK_TO_CLIENT:
-				ChunkServerSendChunkToClient(event);
+			// PEER_RIGHT_LEAF_UPDATE_COMPLETE_TO_PEER = 7013
+			case Protocol.PEER_RIGHT_LEAF_UPDATE_COMPLETE_TO_PEER:
+				handlePeerRightLeafUpdateCompleteToPeer(event);
 				break;
-				**/
+			// PEER_REMOVE_TO_LEFT_LEAF_PEER = 7016
+			case Protocol.PEER_REMOVE_TO_LEFT_LEAF_PEER:
+				handlePeerRemoveToLeftLeafPeer(event);
+				break;
+			// PEER_REMOVE_TO_RIGHT_LEAF_PEER = 7017
+			case Protocol.PEER_REMOVE_TO_RIGHT_LEAF_PEER:
+				handlePeerRemoveToRightLeafPeer(event);
+				break;
+			// PEER_REMOVE_FROM_ROUTING_TABLE_TO_PEER = 7018
+			case Protocol.PEER_REMOVE_FROM_ROUTING_TABLE_TO_PEER:
+				handlePeerRemoveFromRoutingTableToPeer(event);
+				break;
+			// PEER_LEFT_LEAF_ROUTE_TRACE_TO_PEER = 7019
+			case Protocol.PEER_LEFT_LEAF_ROUTE_TRACE_TO_PEER:
+				handlePeerLeftLeafRouteTraceToPeer(event);
+				break;
+			// PEER_RIGHT_LEAF_ROUTE_TRACE_TO_PEER = 7020
+			case Protocol.PEER_RIGHT_LEAF_ROUTE_TRACE_TO_PEER:
+				handlePeerRightLeafRouteTraceToPeer(event);
+				break;
+			// STOREDATA_SEND_STORE_REQUEST_TO_PEER = 8001
+			case Protocol.STOREDATA_SEND_STORE_REQUEST_TO_PEER:
+				handleStoreDataSendStoreRequestToPeer(event);
+				break;
+			// STOREDATA_SEND_FILE_TO_PEER = 8002
+			case Protocol.STOREDATA_SEND_FILE_TO_PEER:
+				handleStoreDataSendFileToPeer(event);
+				break;
+			// STOREDATA_SEND_READ_REQUEST_TO_PEER = 8004
+			case Protocol.STOREDATA_SEND_READ_REQUEST_TO_PEER:
+				handleStoreDataSendReadRequestToPeer(event);
+				break;
 			default:
 				System.out.println("Invalid Event to Node.");
 				return;
@@ -188,25 +259,75 @@ public class Peer implements Node {
 		this.localHostPortNumber = portNumber;
 	}
 	
+	private void handleUserInput() {
+		Scanner scan = new Scanner(System.in);
+		
+		System.out.println("Ready for input.");
+			
+        while(true) {
+            System.out.println("Options:\n[remove] Gracefully remove the node from the DHT\n[print-routing-table] Print the Routing Table"
+            		+ "\n[print-leaf-set] Print the Leaf Set\n[print-files-list] Print the list of Files that are currently stored on this peer\n[Q] Quit\nPlease type your request: ");
+            String input = scan.nextLine();
+            
+            //input = input.toUpperCase();
+            switch (input) {
+            	case "remove":
+            		if (DEBUG) { System.out.println("User selected remove"); }
+            		removePeer();
+            		break;
+            	case "print-routing-table":
+            		if (DEBUG) { System.out.println("User selected print-routing-table"); }
+            		printRoutingTable();
+            		break;
+            	case "print-leaf-set":
+            		if (DEBUG) { System.out.println("User selected print-leaf-set"); }
+            		printLeafSet();
+            		break;
+            	case "print-files-list":
+            		if (DEBUG) { System.out.println("User selected print-files-list"); }
+            		printFilesList();
+            		break;
+            	case "left-leaf-route-trace":
+            		if (DEBUG) { System.out.println("User selected left-leaf-route-trace"); }
+            		sendPeerLeftLeafRouteTraceToPeer();
+            		break;
+            	case "right-leaf-route-trace":
+            		if (DEBUG) { System.out.println("User selected right-leaf-route-trace"); }
+            		sendPeerRightLeafRouteTraceToPeer();
+            		break;
+            	case "Q":
+            		if (DEBUG) { System.out.println("User selected Quit."); }
+            		System.out.println("Quitting program. Goodbye.");
+            		System.exit(1);
+            	case "q":
+            		if (DEBUG) { System.out.println("User selected Quit."); }
+            		System.out.println("Quitting program. Goodbye.");
+            		System.exit(1);
+            	default:
+            		System.out.println("Command unrecognized. Please enter a valid input.");
+            }
+        }
+	}
+	
 	private void connectToDisocvery() {
 		if (DEBUG) { System.out.println("begin Peer connectToDisocvery"); }
 		try {
-			System.out.println("Attempting to connect to Controller " + this.discoveryNodeInformation.getNodeIPAddress() + " at Port Number: " + this.discoveryNodeInformation.getNodePortNumber());
+			System.out.println("Attempting to connect to Discovery " + this.discoveryNodeInformation.getNodeIPAddress() + " at Port Number: " + this.discoveryNodeInformation.getNodePortNumber());
 			Socket discoverySocket = new Socket(this.discoveryNodeInformation.getNodeIPAddress(), this.discoveryNodeInformation.getNodePortNumber());
 			
-			System.out.println("Starting TCPReceiverThread with Controller");
+			System.out.println("Starting TCPReceiverThread with Discovery");
 			peerReceiverThread = new TCPReceiverThread(discoverySocket, this);
 			Thread tcpReceiverThread = new Thread(this.peerReceiverThread);
 			tcpReceiverThread.start();
 			
-			System.out.println("TCPReceiverThread with Controller started");
+			System.out.println("TCPReceiverThread with Discovery started");
 			System.out.println("Sending to " + this.discoveryNodeInformation.getNodeIPAddress() + " on Port " +  this.discoveryNodeInformation.getNodePortNumber());
 			
 			this.discoverySender = new TCPSender(discoverySocket);
 
 			PeerRegisterRequestToDiscovery peerRegisterRequest = new PeerRegisterRequestToDiscovery(this.peerTableEntry);
 
-			if (DEBUG) { System.out.println("ChunkServer about to send message type: " + peerRegisterRequest.getType()); }
+			if (DEBUG) { System.out.println("Peer about to send message type: " + peerRegisterRequest.getType()); }
 			
 			this.discoverySender.sendData(peerRegisterRequest.getBytes());
 		} catch (IOException ioe) {
@@ -223,13 +344,16 @@ public class Peer implements Node {
 		
 		// successful registration
 		if (peerRegisterResponse.getStatusCode() == (byte) 1) {
-			this.initialized.getAndSet(true);
+			//this.initialized.getAndSet(true);
 			System.out.println("Registration Request Succeeded.");
 			System.out.println(String.format("Message: %s", peerRegisterResponse.getAdditionalInfo()));
+			
+			bothLeafUpdatesComplete();
+			//handleUserInput();
 		// unsuccessful registration due to conflict with duplicate identifier
 		} else if (peerRegisterResponse.getStatusCode() == (byte) 2) {
-			System.out.println("Registration Request Failed due to duplicate identifer in system. Generating new one and attempting registration.");
-			String newIdentifier = generateIdentifer();
+			System.out.println("Registration Request Failed due to duplicate identifier in system. Generating new one and attempting registration.");
+			String newIdentifier = generateIdentifier();
 			synchronized (peerNodeIdentifier) {
 				peerNodeIdentifier = newIdentifier;
 			}
@@ -267,7 +391,9 @@ public class Peer implements Node {
 		ArrayList<String> traceList = new ArrayList<String>();
 		traceList.add(registeredTableEntry.getIdentifier());
 		
-		PeerJoinRequestToPeer joinRequest = new PeerJoinRequestToPeer(this.peerTableEntry, 1, traceList, 0);
+		System.out.println("[INFO] Random PEER : " + registeredTableEntry);
+		
+		PeerJoinRequestToPeer joinRequest = new PeerJoinRequestToPeer(this.peerTableEntry, traceList.size(), traceList, 0);
 		
 		try {
 			Socket socket = new Socket(registeredTableEntry.getNodeInformation().getNodeIPAddress(), registeredTableEntry.getNodeInformation().getNodePortNumber());
@@ -290,25 +416,25 @@ public class Peer implements Node {
 		
 		TableEntry joiningTableEntry = joinRequest.getTableEntry();
 		
-		String newIdentifer = joiningTableEntry.getIdentifier();
+		String newIdentifier = joiningTableEntry.getIdentifier();
 		
-		RoutingTable newIdentiferRoutingTable = new RoutingTable(newIdentifer);
-		newIdentiferRoutingTable.generateRoutingTable();
+		RoutingTable newIdentifierRoutingTable = new RoutingTable(newIdentifier);
+		newIdentifierRoutingTable.generateRoutingTable();
 		
 		System.out.println("");
-        System.out.println("[INFO] Join request from PEER : " + newIdentifer);
+        System.out.println("[INFO] Join request from PEER : " + newIdentifier);
 		
 		int hopCount = joinRequest.getHopCount();
 		hopCount++;
 		
 		// need to update the joining peer's routing table with information about all of the entries currently in the routing table
-		generateEntriesInRoutingTable(newIdentifer, newIdentiferRoutingTable);
+		generateEntriesInRoutingTable(newIdentifier, newIdentifierRoutingTable);
 		
 		// need to find what the next peer to send the joining peer to
-		TableEntry nextPeer = lookup(newIdentifer);
+		TableEntry nextPeer = lookup(newIdentifier);
 		
-		// no other entries yet, the identifer is itself
-		if (nextPeer.getIdentifier().equalsIgnoreCase(newIdentifer)) {
+		// no other entries yet, the identifier is itself
+		if (nextPeer.getIdentifier().equalsIgnoreCase(newIdentifier)) {
 			int index = getIndexOfPrefixNotMatching(nextPeer.getIdentifier(), this.peerNodeIdentifier);
 			String lookupEntryString = nextPeer.getIdentifier().substring(0, index + 1);
 			
@@ -319,7 +445,7 @@ public class Peer implements Node {
 					row.put(lookupEntryString, null);
 				}
 			}
-			nextPeer = lookup(newIdentifer);
+			nextPeer = lookup(newIdentifier);
 		}
 		
 		if (nextPeer.getNodeInformation().equals(joiningTableEntry.getNodeInformation())) {
@@ -333,7 +459,7 @@ public class Peer implements Node {
 					row.put(lookupEntryString, null);
 				}
 			}
-			nextPeer = lookup(newIdentifer);
+			nextPeer = lookup(newIdentifier);
 		}
 		
 		// this node is the final destination for the joining peer
@@ -341,24 +467,29 @@ public class Peer implements Node {
 			System.out.println("[INFO] Destination Found PEER : " + this.peerNodeIdentifier);
 			TableEntry leftLeafEntry = null;
 			TableEntry rightLeafEntry = null;
-			
-			synchronized (this.leftLeafTableEntry) {
-				if (this.leftLeafTableEntry == null) {
-					leftLeafEntry = this.peerTableEntry;
-				} else {
+
+			if (this.leftLeafTableEntry == null) {
+				//synchronized (this.leftLeafTableEntry) {
+				leftLeafEntry = this.peerTableEntry;
+				//}
+			} else {
+				synchronized (this.leftLeafTableEntry) {
 					leftLeafEntry = this.leftLeafTableEntry;
 				}
 			}
 			
-			synchronized (this.rightLeafTableEntry) {
-				if (this.rightLeafTableEntry == null) {
-					rightLeafEntry = this.peerTableEntry;
-				} else {
+			
+			if (this.rightLeafTableEntry == null) {
+				//synchronized (this.rightLeafTableEntry) {
+				rightLeafEntry = this.peerTableEntry;
+				//}
+			} else {
+				synchronized (this.rightLeafTableEntry) {
 					rightLeafEntry = this.rightLeafTableEntry;
 				}
 			}
 			
-			PeerJoinRequestFoundDestinationToPeer foundDestination = new PeerJoinRequestFoundDestinationToPeer(this.peerTableEntry, leftLeafEntry, rightLeafEntry, newIdentiferRoutingTable, traceList.size(), traceList, hopCount);
+			PeerJoinRequestFoundDestinationToPeer foundDestination = new PeerJoinRequestFoundDestinationToPeer(this.peerTableEntry, leftLeafEntry, rightLeafEntry, newIdentifierRoutingTable, traceList.size(), traceList, hopCount);
 			
 			try {
 				Socket socket = new Socket(joiningTableEntry.getNodeInformation().getNodeIPAddress(), joiningTableEntry.getNodeInformation().getNodePortNumber());
@@ -373,7 +504,7 @@ public class Peer implements Node {
 			System.out.println("[INFO] Next PEER : " + nextPeer.getIdentifier());
 			traceList.add(nextPeer.getIdentifier());
 			
-			PeerForwardJoinRequestToPeer forwardRequest = new PeerForwardJoinRequestToPeer(joiningTableEntry, newIdentiferRoutingTable, traceList.size(), traceList, hopCount);
+			PeerForwardJoinRequestToPeer forwardRequest = new PeerForwardJoinRequestToPeer(joiningTableEntry, newIdentifierRoutingTable, traceList.size(), traceList, hopCount);
 			
 			try {
 				Socket socket = new Socket(nextPeer.getNodeInformation().getNodeIPAddress(), nextPeer.getNodeInformation().getNodePortNumber());
@@ -397,24 +528,24 @@ public class Peer implements Node {
 		
 		TableEntry joiningTableEntry = forwardJoinRequest.getTableEntry();
 		
-		String newIdentifer = joiningTableEntry.getIdentifier();
+		String newIdentifier = joiningTableEntry.getIdentifier();
 		
-		RoutingTable newIdentiferRoutingTable = forwardJoinRequest.getRoutingTable();
+		RoutingTable newIdentifierRoutingTable = forwardJoinRequest.getRoutingTable();
 		
 		System.out.println("");
-        System.out.println("[INFO] Join request from PEER : " + newIdentifer);
+        System.out.println("[INFO] Join request from PEER : " + newIdentifier);
 		
 		int hopCount = forwardJoinRequest.getHopCount();
 		hopCount++;
 		
 		// need to update the joining peer's routing table with information about all of the entries currently in the routing table
-		generateEntriesInRoutingTable(newIdentifer, newIdentiferRoutingTable);
+		generateEntriesInRoutingTable(newIdentifier, newIdentifierRoutingTable);
 		
 		// need to find what the next peer to send the joining peer to
-		TableEntry nextPeer = lookup(newIdentifer);
+		TableEntry nextPeer = lookup(newIdentifier);
 		
-		// no other entries yet, the identifer is itself
-		if (nextPeer.getIdentifier().equalsIgnoreCase(newIdentifer)) {
+		// no other entries yet, the identifier is itself
+		if (nextPeer.getIdentifier().equalsIgnoreCase(newIdentifier)) {
 			int index = getIndexOfPrefixNotMatching(nextPeer.getIdentifier(), this.peerNodeIdentifier);
 			String lookupEntryString = nextPeer.getIdentifier().substring(0, index + 1);
 			
@@ -425,7 +556,7 @@ public class Peer implements Node {
 					row.put(lookupEntryString, null);
 				}
 			}
-			nextPeer = lookup(newIdentifer);
+			nextPeer = lookup(newIdentifier);
 		}
 		
 		if (nextPeer.getNodeInformation().equals(joiningTableEntry.getNodeInformation())) {
@@ -439,7 +570,7 @@ public class Peer implements Node {
 					row.put(lookupEntryString, null);
 				}
 			}
-			nextPeer = lookup(newIdentifer);
+			nextPeer = lookup(newIdentifier);
 		}
 		
 		// this node is the final destination for the joining peer
@@ -456,7 +587,7 @@ public class Peer implements Node {
 				rightLeafEntry = this.rightLeafTableEntry;
 			}
 			
-			PeerJoinRequestFoundDestinationToPeer foundDestination = new PeerJoinRequestFoundDestinationToPeer(this.peerTableEntry, leftLeafEntry, rightLeafEntry, newIdentiferRoutingTable, traceList.size(), traceList, hopCount);
+			PeerJoinRequestFoundDestinationToPeer foundDestination = new PeerJoinRequestFoundDestinationToPeer(this.peerTableEntry, leftLeafEntry, rightLeafEntry, newIdentifierRoutingTable, traceList.size(), traceList, hopCount);
 			
 			try {
 				Socket socket = new Socket(joiningTableEntry.getNodeInformation().getNodeIPAddress(), joiningTableEntry.getNodeInformation().getNodePortNumber());
@@ -471,7 +602,7 @@ public class Peer implements Node {
 			System.out.println("[INFO] Next PEER : " + nextPeer.getIdentifier());
 			traceList.add(nextPeer.getIdentifier());
 			
-			PeerForwardJoinRequestToPeer forwardRequest = new PeerForwardJoinRequestToPeer(joiningTableEntry, newIdentiferRoutingTable, traceList.size(), traceList, hopCount);
+			PeerForwardJoinRequestToPeer forwardRequest = new PeerForwardJoinRequestToPeer(joiningTableEntry, newIdentifierRoutingTable, traceList.size(), traceList, hopCount);
 			
 			try {
 				Socket socket = new Socket(nextPeer.getNodeInformation().getNodeIPAddress(), nextPeer.getNodeInformation().getNodePortNumber());
@@ -499,10 +630,10 @@ public class Peer implements Node {
                 int key = entrySet.getKey();
                 HashMap<String, TableEntry> row = entrySet.getValue();
                 for (HashMap.Entry<String, TableEntry> rowEntrySet : row.entrySet()) {
-                    String identifer = rowEntrySet.getKey();
+                    String identifier = rowEntrySet.getKey();
                     //TableEntry entry = rowEntrySet.getValue();
-                    if (identifer.substring(0, key + 1).equalsIgnoreCase(this.peerNodeIdentifier.substring(0, key + 1))) {
-                        row.put(identifer, null);
+                    if (identifier.substring(0, key + 1).equalsIgnoreCase(this.peerNodeIdentifier.substring(0, key + 1))) {
+                        row.put(identifier, null);
                     }
                 }
             }
@@ -523,6 +654,8 @@ public class Peer implements Node {
         for (String s : traceList) {
         	traceString = traceString + s + "-";
         }
+        
+        traceString = traceString.substring(0, traceString.length() - 1);
         
         System.out.println("[INFO] TRACE: " + traceString);
 		
@@ -589,7 +722,7 @@ public class Peer implements Node {
                 //int key = entrySet.getKey();
                 HashMap<String, TableEntry> row = entrySet.getValue();
                 for (HashMap.Entry<String, TableEntry> rowEntrySet : row.entrySet()) {
-                    String identifer = rowEntrySet.getKey();
+                    String identifier = rowEntrySet.getKey();
                     TableEntry entry = rowEntrySet.getValue();
                     if (entry != null) {
                     	try {
@@ -603,7 +736,7 @@ public class Peer implements Node {
             			} catch (IOException e) {
             				e.printStackTrace();
             			} catch (Exception e) {
-            				row.put(identifer, null);
+            				row.put(identifier, null);
             			}
                     }
                 }
@@ -611,9 +744,9 @@ public class Peer implements Node {
 		}
         
         System.out.println("");
-        //printRoutingTable();
+        printRoutingTable();
         System.out.println("");
-       // printLeafset();
+        printLeafSet();
         System.out.println("");
         
 		if (DEBUG) { System.out.println("end Peer handlePeerJoinRequestFoundDestinationToPeer"); }
@@ -626,11 +759,74 @@ public class Peer implements Node {
 		
 		TableEntry newTableEntry = updateLeftLeaf.getTableEntry();
 		
-		synchronized (this.rightLeafTableEntry) {
+		if (this.rightLeafTableEntry == null) {
 			this.rightLeafTableEntry = newTableEntry;
+		} else {
+			synchronized (this.rightLeafTableEntry) {
+				this.rightLeafTableEntry = newTableEntry;
+			}
 		}
 		
-		// DANIEL KIELMAN : NEED TO UPDATE THIS LATER WITH LOGIC FOR INCLUDING THE STORED DATA INFORMATION AND FORWARDING IT TO THE NEWLY ADDED LEAF NODE
+		// if the new tableEntry is closer than I am, then need to forward my files to it as it will be the destination for where those files should be
+		synchronized (this.filesWithKeyMap) {
+			for (String filename : filesWithKeyMap.keySet()) {
+				String key = filesWithKeyMap.get(filename);
+				synchronized (this.rightLeafTableEntry) {
+					String closestIdentifier = getClosestPeer(key, this.rightLeafTableEntry.getIdentifier(), this.peerNodeIdentifier);
+					if (closestIdentifier.equals(this.rightLeafTableEntry.getIdentifier())) {
+						byte[] fileBytes = readAndGetFile(filename, key);
+						if (fileBytes != null) {
+							try {
+								PeerForwardFileToPeer forwardFile = new PeerForwardFileToPeer(filename, key, fileBytes, this.peerTableEntry);
+								
+								Socket socket = new Socket(this.rightLeafTableEntry.getNodeInformation().getNodeIPAddress(), this.rightLeafTableEntry.getNodeInformation().getNodePortNumber());
+								TCPSender sender = new TCPSender(socket);
+								sender.sendData(forwardFile.getBytes());
+								
+								// data has been forwarded to new peer, remove it from our reference
+								this.filesWithKeyMap.remove(filename);
+							} catch (UnknownHostException e) {
+								e.printStackTrace();
+							} catch (IOException e) {
+								e.printStackTrace();
+							}
+						}
+					}
+				}
+			}
+		}
+		
+		// send an update that all files that are closer to the new peer have been transferred
+		PeerLeftLeafUpdateCompleteToPeer leftLeafUpdateComplete = new PeerLeftLeafUpdateCompleteToPeer();
+		try {
+			synchronized (this.rightLeafTableEntry) {
+				Socket socket = new Socket(this.rightLeafTableEntry.getNodeInformation().getNodeIPAddress(), this.rightLeafTableEntry.getNodeInformation().getNodePortNumber());
+				TCPSender sender = new TCPSender(socket);
+				sender.sendData(leftLeafUpdateComplete.getBytes());
+			}
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		System.out.println("[INFO] Leafset updated");
+        printLeafSet();
+        
+        // update routing table
+        String newIdentifier = newTableEntry.getIdentifier();
+        int index = getIndexOfPrefixNotMatching(this.peerNodeIdentifier, newIdentifier);
+        String lookupString = newIdentifier.substring(0, index + 1);
+        
+        synchronized (this.routingTable) {
+        	HashMap<String, TableEntry> row = this.routingTable.getRoutingTableEntry(index);
+        	TableEntry previousEntry = row.get(lookupString);
+        	if (previousEntry == null) {
+        		row.put(lookupString, newTableEntry);
+        		System.out.println("[INFO] Routing table updated");
+                printRoutingTable();
+        	}
+        }
 		
 		if (DEBUG) { System.out.println("end Peer handlePeerUpdateLeftLeafPeerNode"); }
 	}
@@ -642,11 +838,74 @@ public class Peer implements Node {
 		
 		TableEntry newTableEntry = updateRightLeaf.getTableEntry();
 		
-		synchronized (this.leftLeafTableEntry) {
+		if (this.leftLeafTableEntry == null) {
 			this.leftLeafTableEntry = newTableEntry;
+		} else {
+			synchronized (this.leftLeafTableEntry) {
+				this.leftLeafTableEntry = newTableEntry;
+			}
 		}
 		
-		// DANIEL KIELMAN : NEED TO UPDATE THIS LATER WITH LOGIC FOR INCLUDING THE STORED DATA INFORMATION AND FORWARDING IT TO THE NEWLY ADDED LEAF NODE
+		// if the new tableEntry is closer than I am, then need to forward my files to it as it will be the destination for where those files should be
+		synchronized (this.filesWithKeyMap) {
+			for (String filename : filesWithKeyMap.keySet()) {
+				String key = filesWithKeyMap.get(filename);
+				synchronized (this.leftLeafTableEntry) {
+					String closestIdentifier = getClosestPeer(key, this.leftLeafTableEntry.getIdentifier(), this.peerNodeIdentifier);
+					if (closestIdentifier.equals(this.leftLeafTableEntry.getIdentifier())) {
+						byte[] fileBytes = readAndGetFile(filename, key);
+						if (fileBytes != null) {
+							try {
+								PeerForwardFileToPeer forwardFile = new PeerForwardFileToPeer(filename, key, fileBytes, this.peerTableEntry);
+								
+								Socket socket = new Socket(this.leftLeafTableEntry.getNodeInformation().getNodeIPAddress(), this.leftLeafTableEntry.getNodeInformation().getNodePortNumber());
+								TCPSender sender = new TCPSender(socket);
+								sender.sendData(forwardFile.getBytes());
+								
+								// data has been forwarded to new peer, remove it from our reference
+								this.filesWithKeyMap.remove(filename);
+							} catch (UnknownHostException e) {
+								e.printStackTrace();
+							} catch (IOException e) {
+								e.printStackTrace();
+							}
+						}
+					}
+				}
+			}
+		}
+		
+		// send an update that all files that are closer to the new peer have been transferred
+		PeerRightLeafUpdateCompleteToPeer rightLeafUpdateComplete = new PeerRightLeafUpdateCompleteToPeer();
+		try {
+			synchronized (this.leftLeafTableEntry) {
+				Socket socket = new Socket(this.leftLeafTableEntry.getNodeInformation().getNodeIPAddress(), this.leftLeafTableEntry.getNodeInformation().getNodePortNumber());
+				TCPSender sender = new TCPSender(socket);
+				sender.sendData(rightLeafUpdateComplete.getBytes());
+			}
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		System.out.println("[INFO] Leafset updated");
+        printLeafSet();
+        
+        // update routing table
+        String newIdentifier = newTableEntry.getIdentifier();
+        int index = getIndexOfPrefixNotMatching(this.peerNodeIdentifier, newIdentifier);
+        String lookupString = newIdentifier.substring(0, index + 1);
+        
+        synchronized (this.routingTable) {
+        	HashMap<String, TableEntry> row = this.routingTable.getRoutingTableEntry(index);
+        	TableEntry previousEntry = row.get(lookupString);
+        	if (previousEntry == null) {
+        		row.put(lookupString, newTableEntry);
+        		System.out.println("[INFO] Routing table updated");
+                printRoutingTable();
+        	}
+        }
 		
 		if (DEBUG) { System.out.println("end Peer handlePeerUpdateRightLeafPeerNode"); }
 	}
@@ -657,22 +916,361 @@ public class Peer implements Node {
 		if (DEBUG) { System.out.println("Peer Node got a message type: " + updateRoutingTable.getType()); }
 		
 		TableEntry newTableEntry = updateRoutingTable.getTableEntry();
-		String newTableEntryIdentifer = newTableEntry.getIdentifier();
+		String newTableEntryIdentifier = newTableEntry.getIdentifier();
 		
-		int index = getIndexOfPrefixNotMatching(this.peerNodeIdentifier, newTableEntryIdentifer);
-		String identifer = newTableEntryIdentifer.substring(0, index + 1);
+		int index = getIndexOfPrefixNotMatching(this.peerNodeIdentifier, newTableEntryIdentifier);
+		String identifier = newTableEntryIdentifier.substring(0, index + 1);
 		
 		synchronized (this.routingTable) {
 			HashMap<String, TableEntry> row = this.routingTable.getRoutingTableEntry(index);
-			TableEntry currentEntry = row.get(identifer);
+			TableEntry currentEntry = row.get(identifier);
 			if (currentEntry == null) {
-				row.put(identifer, newTableEntry);
+				row.put(identifier, newTableEntry);
 			}
 		}
 		if (DEBUG) { System.out.println("end Peer handlePeerUpdateRoutingTableToPeerNode"); }
 	}
 	
-	private TableEntry lookup(String newIdentifer) {
+	private void handlePeerForwardFileToPeer(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handlePeerForwardFileToPeer"); }
+		PeerForwardFileToPeer forwardedFile = (PeerForwardFileToPeer) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + forwardedFile.getType()); }
+		
+		String filename = forwardedFile.getFilename();
+		String key = forwardedFile.getKey();
+		byte[] fileData = forwardedFile.getFileBytes();
+		TableEntry previousTableEntry = forwardedFile.getTableEntry();
+		
+		saveFile(filename, key, fileData);
+		
+		System.out.println("[INFO] File forwarded from PEER : " + previousTableEntry.getIdentifier());
+		
+		if (DEBUG) { System.out.println("end Peer handlePeerForwardFileToPeer"); }
+	}
+	
+	private void handlePeerLeftLeafUpdateCompleteToPeer(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handlePeerLeftLeafUpdateCompleteToPeer"); }
+		PeerLeftLeafUpdateCompleteToPeer leftLeafUpdateComplete = (PeerLeftLeafUpdateCompleteToPeer) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + leftLeafUpdateComplete.getType()); }
+		
+		synchronized (this.leftLeafComplete) {
+			this.leftLeafComplete.getAndSet(true);
+		}
+		
+		if (this.leftLeafComplete.get() && this.rightLeafComplete.get()) {
+			bothLeafUpdatesComplete();
+		}
+		
+		if (DEBUG) { System.out.println("end Peer handlePeerLeftLeafUpdateCompleteToPeer"); }
+	}
+
+	private void handlePeerRightLeafUpdateCompleteToPeer(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handlePeerRightLeafUpdateCompleteToPeer"); }
+		PeerRightLeafUpdateCompleteToPeer rightLeafUpdateComplete = (PeerRightLeafUpdateCompleteToPeer) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + rightLeafUpdateComplete.getType()); }
+		
+		synchronized (this.rightLeafComplete) {
+			this.rightLeafComplete.getAndSet(true);
+		}
+		
+		if (this.leftLeafComplete.get() && this.rightLeafComplete.get()) {
+			bothLeafUpdatesComplete();
+		}
+		
+		if (DEBUG) { System.out.println("end Peer handlePeerRightLeafUpdateCompleteToPeer"); }
+	}
+	
+	private void bothLeafUpdatesComplete() {
+		synchronized (this.initialized) {
+			this.initialized.getAndSet(true);
+		}
+		
+		System.out.println("[INFO] Initialization Complete!\n");
+		
+		PeerUpdateCompleteAndInitializedToDiscovery updateComplete = new PeerUpdateCompleteAndInitializedToDiscovery(this.peerTableEntry);
+		
+		try {
+			this.discoverySender.sendData(updateComplete.getBytes());
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		handleUserInput();
+		
+	}
+	
+	private void handleStoreDataSendStoreRequestToPeer(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handleStoreDataSendStoreRequestToPeer"); }
+		StoreDataSendStoreRequestToPeer storeRequest = (StoreDataSendStoreRequestToPeer) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + storeRequest.getType()); }
+		
+		String filename = storeRequest.getFilename();
+		String key = storeRequest.getKey();
+		NodeInformation storeData = storeRequest.getStoreData();
+		ArrayList<String> traceList = storeRequest.getTraceList();
+		int hopCount = storeRequest.getHopCount();
+		hopCount++;
+		
+		traceList.add(this.peerNodeIdentifier);
+		
+		TableEntry nextTableEntry = lookup(key);
+		
+		System.out.println("[INFO] Store request recieved from StoreData.");
+		
+		
+		// this is the peer that should store the data
+		if (nextTableEntry.getIdentifier().equals(this.peerNodeIdentifier)) {
+			sendPeerStoreDestinationToStoreData(filename, key, traceList, hopCount, storeData);
+		} else {
+			sendPeerForwardStoreRequestToPeer(filename, key, traceList, hopCount, storeData, nextTableEntry);
+		}
+		
+		if (DEBUG) { System.out.println("end Peer handleStoreDataSendStoreRequestToPeer"); }
+	}
+	
+	private void handlePeerForwardStoreRequestToPeer(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handlePeerForwardStoreRequestToPeer"); }
+		PeerForwardStoreRequestToPeer forwardStoreRequest = (PeerForwardStoreRequestToPeer) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + forwardStoreRequest.getType()); }
+		
+		String filename = forwardStoreRequest.getFilename();
+		String key = forwardStoreRequest.getKey();
+		NodeInformation storeData = forwardStoreRequest.getStoreData();
+		ArrayList<String> traceList = forwardStoreRequest.getTraceList();
+		int hopCount = forwardStoreRequest.getHopCount();
+		hopCount++;
+		
+		traceList.add(this.peerNodeIdentifier);
+		
+		TableEntry nextTableEntry = lookup(key);
+		
+		System.out.println("[INFO] Store request recieved");
+		
+		// this is the peer that should store the data
+		if (nextTableEntry.getIdentifier().equals(this.peerNodeIdentifier)) {
+			sendPeerStoreDestinationToStoreData(filename, key, traceList, hopCount, storeData);
+		} else {
+			sendPeerForwardStoreRequestToPeer(filename, key, traceList, hopCount, storeData, nextTableEntry);
+		}
+		
+		if (DEBUG) { System.out.println("end Peer handlePeerForwardStoreRequestToPeer"); }
+	}
+	
+	private void handleStoreDataSendFileToPeer(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handleStoreDataSendFileToPeer"); }
+		StoreDataSendFileToPeer storeFile = (StoreDataSendFileToPeer) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + storeFile.getType()); }
+		
+		System.out.println("[INFO] StoreData Saving File.");
+		
+		String filename = storeFile.getFilename();
+		String key = storeFile.getKey();
+		byte[] fileData = storeFile.getFileBytes();
+		
+		saveFile(filename, key, fileData);
+		
+		if (DEBUG) { System.out.println("end Peer handleStoreDataSendFileToPeer"); }
+	}
+	
+	private void sendPeerStoreDestinationToStoreData(String filename, String key, ArrayList<String> traceList, int hopCount, NodeInformation storeDataNodeInformation) {
+		System.out.println("[INFO] Store request Destination Found");
+		
+		PeerStoreDestinationToStoreData storeDestination = new PeerStoreDestinationToStoreData(filename, key, this.peerNodeInformation, traceList.size(), traceList, hopCount);
+		
+		try {
+			Socket socket = new Socket(storeDataNodeInformation.getNodeIPAddress(), storeDataNodeInformation.getNodePortNumber());
+			
+			TCPSender sender = new TCPSender(socket);
+			sender.sendData(storeDestination.getBytes());
+			
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	private void sendPeerForwardStoreRequestToPeer(String filename, String key, ArrayList<String> traceList, int hopCount, NodeInformation storeDataNodeInformation, TableEntry nextTableEntry) {
+		System.out.println("[INFO] Forwarding Store request to Peer: " + nextTableEntry.getIdentifier());
+		
+		PeerForwardStoreRequestToPeer forwardStoreRequest = new PeerForwardStoreRequestToPeer(filename, key, storeDataNodeInformation, traceList.size(), traceList, hopCount);
+		
+		try {
+			Socket socket = new Socket(nextTableEntry.getNodeInformation().getNodeIPAddress(), nextTableEntry.getNodeInformation().getNodePortNumber());
+			
+			TCPSender sender = new TCPSender(socket);
+			sender.sendData(forwardStoreRequest.getBytes());
+			
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+	}
+	
+	private void handleStoreDataSendReadRequestToPeer(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handleStoreDataSendReadRequestToPeer"); }
+		StoreDataSendReadRequestToPeer readRequest = (StoreDataSendReadRequestToPeer) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + readRequest.getType()); }
+		
+		String filename = readRequest.getFilename();
+		String key = readRequest.getKey();
+		NodeInformation storeData = readRequest.getStoreData();
+		ArrayList<String> traceList = readRequest.getTraceList();
+		int hopCount = readRequest.getHopCount();
+		hopCount++;
+		
+		traceList.add(this.peerNodeIdentifier);
+		
+		TableEntry nextTableEntry = lookup(key);
+		
+		System.out.println("[INFO] Read request recieved from StoreData.");
+		
+		// this is the peer that has the file
+		if (nextTableEntry.getIdentifier().equals(this.peerNodeIdentifier)) {
+			sendPeerSendFileToStoreData(filename, key, traceList, hopCount, storeData);
+		} else {
+			sendPeerForwardReadRequestToPeer(filename, key, traceList, hopCount, storeData, nextTableEntry);
+		}
+		
+		if (DEBUG) { System.out.println("end Peer handleStoreDataSendReadRequestToPeer"); }
+	}
+	
+	private void sendPeerSendFileToStoreData(String filename, String key, ArrayList<String> traceList, int hopCount, NodeInformation storeDataNodeInformation) {
+		System.out.println("[INFO] Read request Destination Found");
+		
+		byte[] fileBytes = readAndGetFile(filename, key);
+		
+		if (fileBytes != null) {
+			PeerSendFileToStoreData sendFile = new PeerSendFileToStoreData(filename, key, this.peerNodeInformation, traceList.size(), traceList, hopCount, fileBytes);
+			
+			try {
+				Socket socket = new Socket(storeDataNodeInformation.getNodeIPAddress(), storeDataNodeInformation.getNodePortNumber());
+				
+				TCPSender sender = new TCPSender(socket);
+				sender.sendData(sendFile.getBytes());
+				
+			} catch (UnknownHostException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		} else {
+			System.out.println("ERROR: Returned null bytes after reading.");
+		}
+		
+	}
+	
+	private void sendPeerForwardReadRequestToPeer(String filename, String key, ArrayList<String> traceList, int hopCount, NodeInformation storeDataNodeInformation, TableEntry nextTableEntry) {
+		System.out.println("[INFO] Forwarding Read request to Peer: " + nextTableEntry.getIdentifier());
+		
+		PeerForwardReadRequestToPeer forwardReadRequest = new PeerForwardReadRequestToPeer(filename, key, storeDataNodeInformation, traceList.size(), traceList, hopCount);
+		
+		try {
+			Socket socket = new Socket(nextTableEntry.getNodeInformation().getNodeIPAddress(), nextTableEntry.getNodeInformation().getNodePortNumber());
+			
+			TCPSender sender = new TCPSender(socket);
+			sender.sendData(forwardReadRequest.getBytes());
+			
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	private void handlePeerForwardReadRequestToPeer(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handlePeerForwardReadRequestToPeer"); }
+		PeerForwardReadRequestToPeer forwardReadRequest = (PeerForwardReadRequestToPeer) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + forwardReadRequest.getType()); }
+		
+		String filename = forwardReadRequest.getFilename();
+		String key = forwardReadRequest.getKey();
+		NodeInformation storeData = forwardReadRequest.getStoreData();
+		ArrayList<String> traceList = forwardReadRequest.getTraceList();
+		int hopCount = forwardReadRequest.getHopCount();
+		hopCount++;
+		
+		traceList.add(this.peerNodeIdentifier);
+		
+		TableEntry nextTableEntry = lookup(key);
+		
+		System.out.println("[INFO] Read request recieved");
+		
+		// this is the peer that has the file
+		if (nextTableEntry.getIdentifier().equals(this.peerNodeIdentifier)) {
+			sendPeerSendFileToStoreData(filename, key, traceList, hopCount, storeData);
+		} else {
+			sendPeerForwardReadRequestToPeer(filename, key, traceList, hopCount, storeData, nextTableEntry);
+		}
+		
+		if (DEBUG) { System.out.println("end Peer handlePeerForwardReadRequestToPeer"); }
+	}
+	
+	// note that it this is coming from the OUR right peer
+	private void handlePeerRemoveToLeftLeafPeer(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handlePeerRemoveToLeftLeafPeer"); }
+		PeerRemoveToLeftLeafPeer removeToLeft = (PeerRemoveToLeftLeafPeer) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + removeToLeft.getType()); }
+		
+		TableEntry te = removeToLeft.getTableEntry();
+		
+		System.out.println("[INFO] Updating Right Leaf to : " + te);
+		
+		synchronized (this.rightLeafTableEntry) {
+			this.rightLeafTableEntry = te;
+		}
+		
+		if (DEBUG) { System.out.println("end Peer handlePeerRemoveToLeftLeafPeer"); }
+	}
+	
+	// note that it this is coming from the OUR left peer
+	private void handlePeerRemoveToRightLeafPeer(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handlePeerRemoveToRightLeafPeer"); }
+		PeerRemoveToRightLeafPeer removeToRight = (PeerRemoveToRightLeafPeer) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + removeToRight.getType()); }
+		
+		TableEntry te = removeToRight.getTableEntry();
+		
+		System.out.println("[INFO] Updating Left Leaf to : " + te);
+		
+		synchronized (this.leftLeafTableEntry) {
+			this.leftLeafTableEntry = te;
+		}
+		
+		if (DEBUG) { System.out.println("end Peer handlePeerRemoveToRightLeafPeer"); }
+	}
+	
+	private void handlePeerRemoveFromRoutingTableToPeer(Event event) {
+		if (DEBUG) { System.out.println("begin Peer handlePeerRemoveFromRoutingTableToPeer"); }
+		PeerRemoveFromRoutingTableToPeer removeFromRoutingTable = (PeerRemoveFromRoutingTableToPeer) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + removeFromRoutingTable.getType()); }
+		
+		TableEntry te = removeFromRoutingTable.getTableEntry();
+		int index = getIndexOfPrefixNotMatching(te.getIdentifier(), this.peerNodeIdentifier);
+		
+		String identifier = te.getIdentifier().substring(0, index + 1);
+		
+		synchronized (this.routingTable) {
+			HashMap<String, TableEntry> row = this.routingTable.getRoutingTableEntry(index);
+			TableEntry entry = row.get(identifier);
+			// if this row has the identifier for the peer that is leaving, then update the routing table to hold null in this value
+			if (entry != null) {
+				if (entry.getIdentifier().equals(te.getIdentifier())) {
+					row.put(identifier, null);
+				}
+			}
+		}
+		
+		//handleUserInput();
+		
+		if (DEBUG) { System.out.println("end Peer handlePeerRemoveFromRoutingTableToPeer"); }
+	}
+	
+	private TableEntry lookup(String newIdentifier) {
 		TableEntry nextEntry = null;
 		
 		// if no other entries on one side then this is the next entry
@@ -692,14 +1290,14 @@ public class Peer implements Node {
 			}
 			
 			// gather the distance for the joining node from this node
-			int joiningDistanceLeft = distanceCounterClockwiseSearch(this.peerNodeIdentifier, newIdentifer);
-			int joiningDistanceRight = distanceClockwiseSearch(this.peerNodeIdentifier, newIdentifer);
+			int joiningDistanceLeft = distanceCounterClockwiseSearch(this.peerNodeIdentifier, newIdentifier);
+			int joiningDistanceRight = distanceClockwiseSearch(this.peerNodeIdentifier, newIdentifier);
 			
 			// joining node is closer than the current node stored in the left leaf set
 			if (joiningDistanceLeft < currentDistanceLeft) {
 				// find which is the closest node, either myself or the node in my left leaf
 				synchronized (this.leftLeafTableEntry) {
-					closestPeer = getClosestPeer(newIdentifer, this.peerNodeIdentifier, this.leftLeafTableEntry.getIdentifier());
+					closestPeer = getClosestPeer(newIdentifier, this.peerNodeIdentifier, this.leftLeafTableEntry.getIdentifier());
 					
 					// if the closest peer is me, set myself as the nextEntry, otherwise is the peer in my left leaf
 					if (closestPeer.equals(this.peerNodeIdentifier)) {
@@ -712,7 +1310,7 @@ public class Peer implements Node {
 			} else if (joiningDistanceRight < currentDistanceRight) {
 				// find which is the closest node, either myself or the node in the right leaf
 				synchronized (this.rightLeafTableEntry) {
-					closestPeer = getClosestPeer(newIdentifer, this.peerNodeIdentifier, this.rightLeafTableEntry.getIdentifier());
+					closestPeer = getClosestPeer(newIdentifier, this.peerNodeIdentifier, this.rightLeafTableEntry.getIdentifier());
 					
 					// if the closest peer is me, set myself as the nextEntry, otherwise is the peer in my right leaf
 					if (closestPeer.equals(this.peerNodeIdentifier)) {
@@ -723,8 +1321,8 @@ public class Peer implements Node {
 				}
 			// joining node is equal distance from both leaf sets
 			} else {
-				int index = getIndexOfPrefixNotMatching(newIdentifer, this.peerNodeIdentifier);
-				String lookupEntryString = newIdentifer.substring(0, index + 1);
+				int index = getIndexOfPrefixNotMatching(newIdentifier, this.peerNodeIdentifier);
+				String lookupEntryString = newIdentifier.substring(0, index + 1);
 				
 				synchronized (this.routingTable) {
 					HashMap<String, TableEntry> row = this.routingTable.getRoutingTableEntry(index);
@@ -755,21 +1353,21 @@ public class Peer implements Node {
 						HashMap<String, TableEntry> row = this.routingTable.getRoutingTableEntry(i);
 						
 						for (Map.Entry<String, TableEntry> entrySet : row.entrySet()) {
-							String identifer = entrySet.getKey();
+							String identifier = entrySet.getKey();
 							TableEntry entry = entrySet.getValue();
 							
 							if (entry != null) {
 								try {
 									Socket socket = new Socket(entry.getNodeInformation().getNodeIPAddress(), entry.getNodeInformation().getNodePortNumber());
 								} catch (IOException ioe) {
-									row.put(identifer, null);
+									row.put(identifier, null);
 									continue;
 								}
 								
-								String entryIdentifer = entry.getIdentifier();
-								closestPeer = getClosestPeer(newIdentifer, this.peerNodeIdentifier, entryIdentifer);
+								String entryIdentifier = entry.getIdentifier();
+								closestPeer = getClosestPeer(newIdentifier, this.peerNodeIdentifier, entryIdentifier);
 								
-								if (closestPeer.equals(entryIdentifer)) {
+								if (closestPeer.equals(entryIdentifier)) {
 									nextEntry = entry;
 								}
 							}
@@ -778,11 +1376,11 @@ public class Peer implements Node {
 				}
 				
 				synchronized (this.leftLeafTableEntry) {
-					closestPeer = getClosestPeer(newIdentifer, closestPeer, this.leftLeafTableEntry.getIdentifier());
+					closestPeer = getClosestPeer(newIdentifier, closestPeer, this.leftLeafTableEntry.getIdentifier());
 				}
 				
 				synchronized (this.rightLeafTableEntry) {
-					closestPeer = getClosestPeer(newIdentifer, closestPeer, this.rightLeafTableEntry.getIdentifier());
+					closestPeer = getClosestPeer(newIdentifier, closestPeer, this.rightLeafTableEntry.getIdentifier());
 				}
 				
 				synchronized (this.leftLeafTableEntry) {
@@ -806,10 +1404,10 @@ public class Peer implements Node {
 		return nextEntry;
 	}
 	
-	private int distanceCounterClockwiseSearch(String identifer1, String identifer2) {
+	private int distanceCounterClockwiseSearch(String identifier1, String identifier2) {
 		int distance = -1;
-		int distance1 = Integer.parseInt(identifer1, 16);
-		int distance2 = Integer.parseInt(identifer2, 16);
+		int distance1 = Integer.parseInt(identifier1, 16);
+		int distance2 = Integer.parseInt(identifier2, 16);
 		
 		// node we are getting distance to is beyond the 0 position
 		if (distance1 < distance2) {
@@ -822,10 +1420,10 @@ public class Peer implements Node {
 		return distance;
 	}
 	
-	private int distanceClockwiseSearch(String identifer1, String identifer2) {
+	private int distanceClockwiseSearch(String identifier1, String identifier2) {
 		int distance = -1;
-		int distance1 = Integer.parseInt(identifer1, 16);
-		int distance2 = Integer.parseInt(identifer2, 16);
+		int distance1 = Integer.parseInt(identifier1, 16);
+		int distance2 = Integer.parseInt(identifier2, 16);
 		
 		// node we are getting distance to is behind us on the same side of the circle
 		if (distance1 < distance2) {
@@ -838,10 +1436,10 @@ public class Peer implements Node {
 		return distance;
 	}
 	
-	private int getPeerNodesDistance(String identifer1, String identifer2) {
+	private int getPeerNodesDistance(String identifier1, String identifier2) {
 		int distance = -1;
-		int distance1 = Integer.parseInt(identifer1, 16);
-		int distance2 = Integer.parseInt(identifer2, 16);
+		int distance1 = Integer.parseInt(identifier1, 16);
+		int distance2 = Integer.parseInt(identifier2, 16);
 		
 		int absoluteDistance = Math.abs(distance1 - distance2);
 		int spaceDistance = SIZE_OF_CHUNK - absoluteDistance;
@@ -869,11 +1467,11 @@ public class Peer implements Node {
 		return distance;
 	}
 	
-	private Direction getDirection(String identifer1, String identifer2) {
+	private Direction getDirection(String identifier1, String identifier2) {
 		Direction direction = null;
 		
-		int distance1 = Integer.parseInt(identifer1, 16);
-		int distance2 = Integer.parseInt(identifer2, 16);
+		int distance1 = Integer.parseInt(identifier1, 16);
+		int distance2 = Integer.parseInt(identifier2, 16);
 		
 		int absoluteDistance = Math.abs(distance1 - distance2);
 		int spaceDistance = SIZE_OF_CHUNK - absoluteDistance;
@@ -901,29 +1499,29 @@ public class Peer implements Node {
 		return direction;
 	}
 	
-	private String getClosestPeer(String centeredIdentifer, String identifer1, String identifer2) {
+	private String getClosestPeer(String centeredIdentifier, String identifier1, String identifier2) {
 		String closestPeer = null;
 		
-		int distanceFromIdentiefer1 = getPeerNodesDistance(centeredIdentifer, identifer1);
-		int distanceFromIdentiefer2 = getPeerNodesDistance(centeredIdentifer, identifer2);
+		int distanceFromIdentiefer1 = getPeerNodesDistance(centeredIdentifier, identifier1);
+		int distanceFromIdentiefer2 = getPeerNodesDistance(centeredIdentifier, identifier2);
 		
-		// identifer1 is closer to us 
+		// identifier1 is closer to us 
 		if (distanceFromIdentiefer1 < distanceFromIdentiefer2) {
-			closestPeer = identifer1;
-		// identifer2 is closer to us 
+			closestPeer = identifier1;
+		// identifier2 is closer to us 
 		} else if (distanceFromIdentiefer1 > distanceFromIdentiefer2) {
-			closestPeer = identifer2;
-		// identifers are equal distance to us, need to find node that is before us when traversing clockwise
+			closestPeer = identifier2;
+		// identifiers are equal distance to us, need to find node that is before us when traversing clockwise
 		} else {
-			Direction directionToIdentifer1 = getDirection(centeredIdentifer, identifer1);
-			Direction directionToIdentifer2 = getDirection(centeredIdentifer, identifer2);
+			Direction directionToIdentifier1 = getDirection(centeredIdentifier, identifier1);
+			Direction directionToIdentifier2 = getDirection(centeredIdentifier, identifier2);
 			
-			// identifer1 is past us
-			if (directionToIdentifer1.equals(Direction.CLOCKWISE)) {
-				closestPeer = identifer1;
-			// identifer2 is past us
-			} else if (directionToIdentifer2.equals(Direction.CLOCKWISE)){
-				closestPeer = identifer2;
+			// identifier1 is past us
+			if (directionToIdentifier1.equals(Direction.CLOCKWISE)) {
+				closestPeer = identifier1;
+			// identifier2 is past us
+			} else if (directionToIdentifier2.equals(Direction.CLOCKWISE)){
+				closestPeer = identifier2;
 			}
 			
 		}
@@ -931,19 +1529,19 @@ public class Peer implements Node {
 		return closestPeer;
 	}
 	
-	private int getIndexOfPrefixNotMatching(String identifer1, String identifer2) {
+	private int getIndexOfPrefixNotMatching(String identifier1, String identifier2) {
 		int index = 0;
 		int loopCount = 0;
 		
-		if (identifer1.length() < identifer2.length()) {
-			loopCount = identifer1.length();
+		if (identifier1.length() < identifier2.length()) {
+			loopCount = identifier1.length();
 		} else {
-			loopCount = identifer2.length();
+			loopCount = identifier2.length();
 		}
 		
-		// find the first index where the identifers no longer match
+		// find the first index where the identifiers no longer match
 		for (int i=0; i < loopCount; i++) {
-			if (identifer1.charAt(i) != identifer2.charAt(i)) {
+			if (identifier1.charAt(i) != identifier2.charAt(i)) {
 				index = i;
 				break;
 			}
@@ -953,8 +1551,8 @@ public class Peer implements Node {
 		
 	}
 	
-	private void generateEntriesInRoutingTable(String newIdentifer, RoutingTable newRoutingTable) {
-		int loopCount = getIndexOfPrefixNotMatching(this.peerNodeIdentifier, newIdentifer);
+	private void generateEntriesInRoutingTable(String newIdentifier, RoutingTable newRoutingTable) {
+		int loopCount = getIndexOfPrefixNotMatching(this.peerNodeIdentifier, newIdentifier);
 		
 		synchronized (this.routingTable) {
 			for (int i=0; i < loopCount; i++) {
@@ -962,20 +1560,402 @@ public class Peer implements Node {
 				HashMap<String, TableEntry> newRow = newRoutingTable.getRoutingTableEntry(i);
 				
 				for (Map.Entry<String, TableEntry> entrySet : row.entrySet()) {
-					String identifer = entrySet.getKey();
+					String identifier = entrySet.getKey();
 					TableEntry entry = entrySet.getValue();
 					
 					if (entry != null) {
-						if (newRow.get(identifer) == null) {
-							newRow.put(identifer, entry);
+						if (newRow.get(identifier) == null) {
+							newRow.put(identifier, entry);
 						}
 					}
 				}
 				
-				String missingEntryIdentifer = this.peerNodeIdentifier.substring(0, i + 1);
+				String missingEntryIdentifier = this.peerNodeIdentifier.substring(0, i + 1);
 				
-				if (newRow.get(missingEntryIdentifer) == null) {
-					newRow.put(missingEntryIdentifer, this.peerTableEntry);
+				if (newRow.get(missingEntryIdentifier) == null) {
+					newRow.put(missingEntryIdentifier, this.peerTableEntry);
+				}
+			}
+		}
+	}
+	
+	private void saveFile(String fileName, String key, byte[] fileData) {
+
+		String path = this.storedFileLocation + fileName;
+		File fileLocationToBeSaved = new File(path.substring(0, path.lastIndexOf("/")));
+		
+		if (!fileLocationToBeSaved.exists()) {
+			fileLocationToBeSaved.mkdirs();
+		}
+		
+		File fileToBeSaved = new File(path);
+		
+		try {
+			// save file to the local system
+			FileOutputStream fos = new FileOutputStream(fileToBeSaved);
+			fos.write(fileData, 0, fileData.length);
+			
+			System.out.println("Saving file to the following location: " + fileToBeSaved.getAbsolutePath());
+			
+			synchronized (this.filesWithKeyMap) {
+				this.filesWithKeyMap.put(fileName, key);
+			}
+			
+			fos.close();
+			
+		} catch (FileNotFoundException e) {
+			System.out.println("ChunkServer: Error in saveFile: File location not found.");
+			e.printStackTrace();
+		} catch (IOException e) {
+			System.out.println("ChunkServer: Error in saveFile: Writing file failed.");
+			e.printStackTrace();
+		}
+	}
+	
+	private byte[] readAndGetFile(String fileName, String key) {
+		String fileLocation = this.storedFileLocation + fileName;
+		File fileToReturn = new File(fileLocation);
+		
+		Boolean exists = false;
+		
+		synchronized (this.filesWithKeyMap) {
+			if (this.filesWithKeyMap.containsKey(fileName)) {
+				String tempKey = this.filesWithKeyMap.get(fileName);
+				if (tempKey.equalsIgnoreCase(key)) {
+					exists = true;
+				}
+			}
+		}
+		
+		if (fileToReturn.exists() && exists) {
+			try {
+				RandomAccessFile raf = new RandomAccessFile(fileToReturn, "rw");
+				byte[] tempData = new byte[(int) fileToReturn.length()];
+				raf.read(tempData);
+				
+				raf.close();
+				
+				return tempData;
+				
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		} else {
+			System.out.println("ERROR: File could not be found!");
+		}
+		
+		byte[] nullBytes = null;
+		return nullBytes;
+	}
+	
+	private void removePeer() {
+		PeerRemovePeerToDiscovery removePeer = new PeerRemovePeerToDiscovery(this.peerTableEntry);
+		
+		// first notify the discovery node that we are removing this peer from the DHT
+		try {
+			this.discoverySender.sendData(removePeer.getBytes());
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		if (this.initialized.get()) {
+			
+			TableEntry leftLeaf = null;
+			synchronized (this.leftLeafTableEntry) {
+				leftLeaf = this.leftLeafTableEntry;
+			}
+			
+			TableEntry rightLeaf = null;
+			synchronized (this.rightLeafTableEntry) {
+				rightLeaf = this.rightLeafTableEntry;
+			}
+			
+			if (leftLeaf != null && rightLeaf != null) {
+				// notify the left leafset that we are being removed from the system
+				System.out.println("[INFO] Notifying Left Leaf Node");
+				PeerRemoveToLeftLeafPeer removeToLeft = new PeerRemoveToLeftLeafPeer(rightLeaf);
+				
+				try {
+					Socket socket = new Socket(leftLeaf.getNodeInformation().getNodeIPAddress(), leftLeaf.getNodeInformation().getNodePortNumber());
+					TCPSender sender = new TCPSender(socket);
+					sender.sendData(removeToLeft.getBytes());
+				} catch (UnknownHostException e) {
+					e.printStackTrace();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+				
+				// notify the right leafset that we are being removed from the system
+				System.out.println("[INFO] Notifying Right Leaf Node");
+				PeerRemoveToRightLeafPeer removeToRight = new PeerRemoveToRightLeafPeer(leftLeaf);
+				
+				try {
+					Socket socket = new Socket(rightLeaf.getNodeInformation().getNodeIPAddress(), rightLeaf.getNodeInformation().getNodePortNumber());
+					TCPSender sender = new TCPSender(socket);
+					sender.sendData(removeToRight.getBytes());
+				} catch (UnknownHostException e) {
+					e.printStackTrace();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+			
+			// send all files stored at this peer to whatever peer is closer, left or right leaf
+			System.out.println("[INFO] Transfering Files");
+			synchronized (this.filesWithKeyMap) {
+				for (String s : this.filesWithKeyMap.keySet()) {
+					String key = this.filesWithKeyMap.get(s);
+					
+					TableEntry newTableEntry = null;
+					
+					String newIdentifier = getClosestPeer(key, leftLeaf.getIdentifier(), rightLeaf.getIdentifier());
+					
+					if (newIdentifier.equals(leftLeaf.getIdentifier())) {
+						newTableEntry = leftLeaf;
+					} else if (newIdentifier.equals(rightLeaf.getIdentifier())) {
+						newTableEntry = rightLeaf;
+					}
+					
+					if (newTableEntry != null) {
+						byte[] fileBytes = readAndGetFile(s, key);
+						PeerForwardFileToPeer forwardFile = new PeerForwardFileToPeer(s, key, fileBytes, this.peerTableEntry);
+						
+						try {
+							Socket socket = new Socket(newTableEntry.getNodeInformation().getNodeIPAddress(), newTableEntry.getNodeInformation().getNodePortNumber());
+							TCPSender sender = new TCPSender(socket);
+							sender.sendData(forwardFile.getBytes());
+						} catch (UnknownHostException e) {
+							e.printStackTrace();
+						} catch (IOException e) {
+							e.printStackTrace();
+						}
+					}
+				}
+			}
+			
+			// notify all nodes to remove this peer from the routing table
+			System.out.println("[INFO] Notifying Routing table");
+			
+			synchronized (this.routingTable) {
+				for (Entry<Integer, HashMap<String, TableEntry>> entrySet : this.routingTable.getTable().entrySet()) {
+	                //int key = entrySet.getKey();
+	                HashMap<String, TableEntry> row = entrySet.getValue();
+
+                    for (Map.Entry<String, TableEntry> entrySet1 : row.entrySet()) {
+                        //String identifier = entrySet1.getKey();
+                        TableEntry peer = entrySet1.getValue();
+                        if (peer != null) {
+                            try {
+                            	PeerRemoveFromRoutingTableToPeer removeFromRoutingTable = new PeerRemoveFromRoutingTableToPeer(this.peerTableEntry);
+                                Socket socket = new Socket(peer.getNodeInformation().getNodeIPAddress(), peer.getNodeInformation().getNodePortNumber());
+                                
+                                TCPSender sender = new TCPSender(socket);
+                                
+                                sender.sendData(removeFromRoutingTable.getBytes());
+                            } catch (Exception ex) {
+
+                            }
+                        }
+                    }
+                }
+			}
+		}
+		
+		System.exit(0);
+	}
+	
+	private void printRoutingTable() {
+		synchronized (this.routingTable) {
+			this.routingTable.printRoutingTable();
+		}
+		//handleUserInput();
+	}
+	
+	private void printLeafSet() {
+		synchronized (this.leftLeafTableEntry) {
+			if (this.leftLeafTableEntry != null) {
+				System.out.println("[INFO] LEFTLEAF: " + this.leftLeafTableEntry);
+			} else {
+				System.out.println("[INFO] LEFTLEAF: No Left Leaf TableEntry registered.");
+			}
+		}
+		
+		synchronized (this.rightLeafTableEntry) {
+			if (this.rightLeafTableEntry != null) {
+				System.out.println("[INFO] RIGHTLEAF: " + this.rightLeafTableEntry);
+			} else {
+				System.out.println("[INFO] RIGHTLEAF: No Right Leaf TableEntry registered.");
+			}
+		}
+		//handleUserInput();
+	}
+	
+	private void printFilesList() {
+		synchronized (this.filesWithKeyMap) {
+			System.out.println("[INFO] ---Stored Files---");
+			for (String s : this.filesWithKeyMap.keySet()) {
+				System.out.println("[INFO] Filename: " + s + " - Key: " + this.filesWithKeyMap.get(s));
+			}
+		}
+		//handleUserInput();
+	}
+	
+	private void sendPeerLeftLeafRouteTraceToPeer() {
+		String originNodeIdentifier = this.peerNodeIdentifier;
+		ArrayList<String> traceIdentifierList = new ArrayList<String>();
+		
+		traceIdentifierList.add(this.peerNodeIdentifier);
+		
+		PeerLeftLeafRouteTraceToPeer leftLeafRouteTrace = new PeerLeftLeafRouteTraceToPeer(originNodeIdentifier, traceIdentifierList.size(), traceIdentifierList);
+		
+		synchronized (this.leftLeafTableEntry) {
+			try {
+				Socket socket = new Socket(this.leftLeafTableEntry.getNodeInformation().getNodeIPAddress(), this.leftLeafTableEntry.getNodeInformation().getNodePortNumber());
+				
+				TCPSender sender = new TCPSender(socket);
+				sender.sendData(leftLeafRouteTrace.getBytes());
+				
+			} catch (UnknownHostException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		
+	}
+	
+	private void handlePeerLeftLeafRouteTraceToPeer(Event event) {
+		PeerLeftLeafRouteTraceToPeer leftLeafRouteTrace = (PeerLeftLeafRouteTraceToPeer) event;
+		
+		String originNodeIdentifier = leftLeafRouteTrace.getOriginNodeIdentifier();
+		ArrayList<String> traceIdentifierList = leftLeafRouteTrace.getTraceIdentifierList();
+		
+		if (originNodeIdentifier.equals(this.peerNodeIdentifier)) {
+			System.out.println("[INFO] ---BACK TO ORIGIN---");
+			
+			String traceString = "";
+	        for (String s : traceIdentifierList) {
+	        	traceString = traceString + s + "-";
+	        }
+	        
+	        traceString = traceString.substring(0, traceString.length() - 1);
+	        System.out.println("[INFO] LEFT LEAF TRACE: " + traceString);
+	        
+	        // make it easier and see the hex values as decimal
+	        ArrayList<Long> traceAsLongList = new ArrayList<Long>();
+	        
+	        for (String s : traceIdentifierList) {
+	        	traceAsLongList.add(Long.parseLong(s, 16));
+	        }
+	        
+	        String traceLongString = "";
+	        for (Long l : traceAsLongList) {
+	        	traceLongString = traceLongString + l + "-";
+	        }
+	        
+	        traceLongString = traceLongString.substring(0, traceLongString.length() - 1);
+	        System.out.println("[INFO] LEFT LEAF TRACE AS DECIMAL: " + traceLongString);
+	        
+	        //handleUserInput();
+		} else {
+			System.out.println("[INFO] ---FORWARDING LEFT LEAF ROUTE TRACE---");
+			traceIdentifierList.add(this.peerNodeIdentifier);
+			
+			synchronized (this.leftLeafTableEntry) {
+				try {
+					PeerLeftLeafRouteTraceToPeer leftLeafRouteTraceForward = new PeerLeftLeafRouteTraceToPeer(originNodeIdentifier, traceIdentifierList.size(), traceIdentifierList);
+					
+					Socket socket = new Socket(this.leftLeafTableEntry.getNodeInformation().getNodeIPAddress(), this.leftLeafTableEntry.getNodeInformation().getNodePortNumber());
+					
+					TCPSender sender = new TCPSender(socket);
+					sender.sendData(leftLeafRouteTraceForward.getBytes());
+					
+				} catch (UnknownHostException e) {
+					e.printStackTrace();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+	}
+	
+	private void sendPeerRightLeafRouteTraceToPeer() {
+		String originNodeIdentifier = this.peerNodeIdentifier;
+		ArrayList<String> traceIdentifierList = new ArrayList<String>();
+		
+		traceIdentifierList.add(this.peerNodeIdentifier);
+		
+		PeerRightLeafRouteTraceToPeer rightLeafRouteTrace = new PeerRightLeafRouteTraceToPeer(originNodeIdentifier, traceIdentifierList.size(), traceIdentifierList);
+		
+		synchronized (this.rightLeafTableEntry) {
+			try {
+				Socket socket = new Socket(this.rightLeafTableEntry.getNodeInformation().getNodeIPAddress(), this.rightLeafTableEntry.getNodeInformation().getNodePortNumber());
+				
+				TCPSender sender = new TCPSender(socket);
+				sender.sendData(rightLeafRouteTrace.getBytes());
+				
+			} catch (UnknownHostException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		
+	}
+	
+	private void handlePeerRightLeafRouteTraceToPeer(Event event) {
+		PeerRightLeafRouteTraceToPeer rightLeafRouteTrace = (PeerRightLeafRouteTraceToPeer) event;
+		
+		String originNodeIdentifier = rightLeafRouteTrace.getOriginNodeIdentifier();
+		ArrayList<String> traceIdentifierList = rightLeafRouteTrace.getTraceIdentifierList();
+		
+		if (originNodeIdentifier.equals(this.peerNodeIdentifier)) {
+			System.out.println("[INFO] ---BACK TO ORIGIN---");
+			
+			String traceString = "";
+	        for (String s : traceIdentifierList) {
+	        	traceString = traceString + s + "-";
+	        }
+	        
+	        traceString = traceString.substring(0, traceString.length() - 1);
+	        System.out.println("[INFO] RIGHT LEAF TRACE: " + traceString);
+	        
+	     // make it easier and see the hex values as decimal
+	        ArrayList<Long> traceAsLongList = new ArrayList<Long>();
+	        
+	        for (String s : traceIdentifierList) {
+	        	traceAsLongList.add(Long.parseLong(s, 16));
+	        }
+	        
+	        String traceLongString = "";
+	        for (Long l : traceAsLongList) {
+	        	traceLongString = traceLongString + l + "-";
+	        }
+	        
+	        traceLongString = traceLongString.substring(0, traceLongString.length() - 1);
+	        System.out.println("[INFO] RIGHT LEAF TRACE AS DECIMAL: " + traceLongString);
+	        
+	        
+	        //handleUserInput();
+		} else {
+			System.out.println("[INFO] ---FORWARDING RIGHT LEAF ROUTE TRACE---");
+			traceIdentifierList.add(this.peerNodeIdentifier);
+			
+			synchronized (this.rightLeafTableEntry) {
+				try {
+					PeerRightLeafRouteTraceToPeer rightLeafRouteTraceForward = new PeerRightLeafRouteTraceToPeer(originNodeIdentifier, traceIdentifierList.size(), traceIdentifierList);
+					
+					Socket socket = new Socket(this.rightLeafTableEntry.getNodeInformation().getNodeIPAddress(), this.rightLeafTableEntry.getNodeInformation().getNodePortNumber());
+					
+					TCPSender sender = new TCPSender(socket);
+					sender.sendData(rightLeafRouteTraceForward.getBytes());
+					
+				} catch (UnknownHostException e) {
+					e.printStackTrace();
+				} catch (IOException e) {
+					e.printStackTrace();
 				}
 			}
 		}

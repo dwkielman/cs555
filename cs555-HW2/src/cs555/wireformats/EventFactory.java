@@ -38,106 +38,122 @@ public class EventFactory {
 				case Protocol.DISCOVERY_REGISTER_RESPONSE_TO_PEER:
 					event = new DiscoveryRegisterResponseToPeer(marshalledBytes);
 					break;
-					/**
-				// CONTROLLER_REGISTER_RESPONSE_TO_CLIENT = 6001
-				case Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CLIENT:
-					event = new ControllerRegisterResponseToClient(marshalledBytes);
+				// DISCOVERY_SEND_RANDOM_NODE_TO_PEER = 6001
+				case Protocol.DISCOVERY_SEND_RANDOM_NODE_TO_PEER:
+					event = new DiscoverySendRandomNodeToPeer(marshalledBytes);
 					break;
-				// CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT = 6002
-				case Protocol.CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT:
-					event = new ControllerChunkServersResponseToClient(marshalledBytes);
+				// DISCOVERY_STORE_REQUEST_RESPONSE_TO_STOREDATA = 6002
+				case Protocol.DISCOVERY_STORE_REQUEST_RESPONSE_TO_STOREDATA:
+					event = new DiscoveryStoreRequestResponseToStoreData(marshalledBytes);
 					break;
-				// CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT = 6003
-				case Protocol.CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT:
-					event = new ControllerChunkServerToReadResponseToClient(marshalledBytes);
+				// DISCOVERY_READ_REQUEST_RESPONSE_TO_STOREDATA = 6003
+				case Protocol.DISCOVERY_READ_REQUEST_RESPONSE_TO_STOREDATA:
+					event = new DiscoveryReadRequestResponseToStoreData(marshalledBytes);
 					break;
-				// CONTROLLER_HEARTBEAT_TO_CHUNKSERVER = 6004
-				case Protocol.CONTROLLER_HEARTBEAT_TO_CHUNKSERVER:
-					event = new ControllerHeartbeatToChunkServer(marshalledBytes);
-					break;
-				// CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER = 6005
-				case Protocol.CONTROLLER_FORWARD_DATA_TO_NEW_CHUNKSERVER:
-					event = new ControllerForwardDataToNewChunkServer(marshalledBytes);
-					break;
-				// CONTROLLER_FORWARD_CORRUPT_CHUNK_TO_CHUNKSERVER = 6006
-				case Protocol.CONTROLLER_FORWARD_CORRUPT_CHUNK_TO_CHUNKSERVER:
-					event = new ControllerForwardFixCorruptChunkToChunkServer(marshalledBytes);
-					break;
-				// CONTROLLER_FORWARD_ONLY_CORRUPT_CHUNK_TO_CHUNKSERVER = 6007
-				case Protocol.CONTROLLER_FORWARD_ONLY_CORRUPT_CHUNK_TO_CHUNKSERVER:
-					event = new ControllerForwardOnlyFixCorruptChunkToChunkServer(marshalledBytes);
-					break;
-				// CONTROLLER_RELEASE_CLIENT = 6008
-				case Protocol.CONTROLLER_RELEASE_CLIENT:
-					event = new ControllerReleaseClient(marshalledBytes);
-					break;
-					**/
 				// PEER_REGISTER_REQUEST_TO_DISCOVERY = 7000
 				case Protocol.PEER_REGISTER_REQUEST_TO_DISCOVERY:
 					event = new PeerRegisterRequestToDiscovery(marshalledBytes);
 					break;
-					/**
-				// CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER = 7001
-				case Protocol.CHUNKSERVER_SEND_CHUNK_TO_LAST_CHUNKSERVER:
-					event = new ChunkServerSendChunkToLastChunkServer(marshalledBytes);
+				// PEER_JOIN_REQUEST_TO_PEER = 7001
+				case Protocol.PEER_JOIN_REQUEST_TO_PEER:
+					event = new PeerJoinRequestToPeer(marshalledBytes);
 					break;
-				// CHUNKSERVER_SEND_CHUNK_TO_CLIENT = 7002
-				case Protocol.CHUNKSERVER_SEND_CHUNK_TO_CLIENT:
-					event = new ChunkServerSendChunkToClient(marshalledBytes);
+				// PEER_FORWARD_JOIN_REQUEST_TO_PEER = 7002
+				case Protocol.PEER_FORWARD_JOIN_REQUEST_TO_PEER:
+					event = new PeerForwardJoinRequestToPeer(marshalledBytes);
 					break;
-				// CHUNKSERVER_SEND_MAJOR_HEARTBEAT_T0_CONTROLLER = 7003
-				case Protocol.CHUNKSERVER_SEND_MAJOR_HEARTBEAT_T0_CONTROLLER:
-					event = new ChunkServerSendMajorHeartbeatToController(marshalledBytes);
+				// PEER_JOIN_REQUEST_FOUND_DESTINATION_TO_PEER = 7003
+				case Protocol.PEER_JOIN_REQUEST_FOUND_DESTINATION_TO_PEER:
+					event = new PeerJoinRequestFoundDestinationToPeer(marshalledBytes);
 					break;
-				// CHUNKSERVER_SEND_MINOR_HEARTBEAT_T0_CONTROLLER = 7004
-				case Protocol.CHUNKSERVER_SEND_MINOR_HEARTBEAT_T0_CONTROLLER:
-					event = new ChunkServerSendMinorHeartbeatToController(marshalledBytes);
+				// PEER_UPDATE_LEFT_LEAF_PEER = 7004
+				case Protocol.PEER_UPDATE_LEFT_LEAF_PEER:
+					event = new PeerUpdateLeftLeafPeerNode(marshalledBytes);
 					break;
-				// CHUNKSERVER_SEND_CORRUPT_CHUNK_T0_CONTROLLER = 7005
-				case Protocol.CHUNKSERVER_SEND_CORRUPT_CHUNK_T0_CONTROLLER:
-					event = new ChunkServerSendCorruptChunkToController(marshalledBytes);
+				// PEER_UPDATE_RIGHT_LEAF_PEER = 7005
+				case Protocol.PEER_UPDATE_RIGHT_LEAF_PEER:
+					event = new PeerUpdateRightLeafPeerNode(marshalledBytes);
 					break;
-				// CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER = 7006
-				case Protocol.CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER:
-					event = new ChunkServerFixCorruptChunkToChunkServer(marshalledBytes);
+				// PEER_UPDATE_ROUTING_TABLE_TO_PEER = 7006
+				case Protocol.PEER_UPDATE_ROUTING_TABLE_TO_PEER:
+					event = new PeerUpdateRoutingTableToPeerNode(marshalledBytes);
 					break;
-				// CHUNKSERVER_DELETED_CHUNK_TO_CONTROLLER = 7007
-				case Protocol.CHUNKSERVER_DELETED_CHUNK_TO_CONTROLLER:
-					event = new ChunkServerDeletedChunkToController(marshalledBytes);
+				// PEER_STORE_DESTINATION_TO_STORE_DATA = 7007
+				case Protocol.PEER_STORE_DESTINATION_TO_STORE_DATA:
+					event = new PeerStoreDestinationToStoreData(marshalledBytes);
 					break;
-				// CHUNKSERVER_NOTIFY_FIX_SUCCESS_TO_CONTROLLER = 7008
-				case Protocol.CHUNKSERVER_NOTIFY_FIX_SUCCESS_TO_CONTROLLER:
-					event = new ChunkServerNotifyFixSuccessToController(marshalledBytes);
+				// PEER_FORWARD_STORE_REQUEST_TO_PEER = 7008
+				case Protocol.PEER_FORWARD_STORE_REQUEST_TO_PEER:
+					event = new PeerForwardStoreRequestToPeer(marshalledBytes);
 					break;
-				// CHUNKSERVER_SEND_ONLY_CORRUPT_CHUNK_T0_CONTROLLER = 7009
-				case Protocol.CHUNKSERVER_SEND_ONLY_CORRUPT_CHUNK_T0_CONTROLLER:
-					event = new ChunkServerSendOnlyCorruptChunkToController(marshalledBytes);
+				// PEER_SEND_FILE_TO_STORE_DATA = 7009
+				case Protocol.PEER_SEND_FILE_TO_STORE_DATA:
+					event = new PeerSendFileToStoreData(marshalledBytes);
 					break;
-				// CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8000
-				case Protocol.CLIENT_REGISTER_REQUEST_TO_CONTROLLER:
-					event = new ClientRegisterRequestToController(marshalledBytes);
+				// PEER_FORWARD_READ_REQUEST_TO_PEER = 7010
+				case Protocol.PEER_FORWARD_READ_REQUEST_TO_PEER:
+					event = new PeerForwardReadRequestToPeer(marshalledBytes);
 					break;
-				// CLIENT_REGISTER_REQUEST_TO_CONTROLLER = 8001
-				case Protocol.CLIENT_CHUNKSERVER_REQUEST_TO_CONTROLLER:
-					event = new ClientChunkServerRequestToController(marshalledBytes);
+				// PEER_FORWARD_FILE_TO_PEER = 7011
+				case Protocol.PEER_FORWARD_FILE_TO_PEER:
+					event = new PeerForwardFileToPeer(marshalledBytes);
 					break;
-				// CLIENT_SEND_CHUNK_TO_CHUNKSERVER = 8002
-				case Protocol.CLIENT_SEND_CHUNK_TO_CHUNKSERVER:
-					event = new ClientSendChunkToChunkServer(marshalledBytes);
+				// PEER_LEFT_LEAF_UPDATE_COMPLETE_TO_PEER = 7012
+				case Protocol.PEER_LEFT_LEAF_UPDATE_COMPLETE_TO_PEER:
+					event = new PeerLeftLeafUpdateCompleteToPeer(marshalledBytes);
 					break;
-				// CLIENT_READ_REQUEST_TO_CONTROLLER = 8003
-				case Protocol.CLIENT_READ_REQUEST_TO_CONTROLLER:
-					event = new ClientReadFileRequestToController(marshalledBytes);
+				// PEER_RIGHT_LEAF_UPDATE_COMPLETE_TO_PEER = 7013
+				case Protocol.PEER_RIGHT_LEAF_UPDATE_COMPLETE_TO_PEER:
+					event = new PeerRightLeafUpdateCompleteToPeer(marshalledBytes);
 					break;
-				// CLIENT_READ_REQUEST_TO_CHUNKSERVER = 8004
-				case Protocol.CLIENT_READ_REQUEST_TO_CHUNKSERVER:
-					event = new ClientRequestToReadFromChunkServer(marshalledBytes);
+				// PEER_UPDATE_COMPLETE_AND_INITIALIZED_TO_DISCOVERY = 7014
+				case Protocol.PEER_UPDATE_COMPLETE_AND_INITIALIZED_TO_DISCOVERY:
+					event = new PeerUpdateCompleteAndInitializedToDiscovery(marshalledBytes);
 					break;
-				// IMPROVED_CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER = 7010
-				case Protocol.IMPROVED_CHUNKSERVER_FIX_CORRUPT_CHUNK_TO_CHUNKSERVER:
-					event = new ImprovedChunkServerFixCorruptChunkToChunkServer(marshalledBytes);
+				// PEER_REMOVE_PEER_TO_DISCOVERY = 7015
+				case Protocol.PEER_REMOVE_PEER_TO_DISCOVERY:
+					event = new PeerRemovePeerToDiscovery(marshalledBytes);
 					break;
-					**/
+				// PEER_REMOVE_TO_LEFT_LEAF_PEER = 7016
+				case Protocol.PEER_REMOVE_TO_LEFT_LEAF_PEER:
+					event = new PeerRemoveToLeftLeafPeer(marshalledBytes);
+					break;
+				// PEER_REMOVE_TO_RIGHT_LEAF_PEER = 7017
+				case Protocol.PEER_REMOVE_TO_RIGHT_LEAF_PEER:
+					event = new PeerRemoveToRightLeafPeer(marshalledBytes);
+					break;
+				// PEER_REMOVE_FROM_ROUTING_TABLE_TO_PEER = 7018
+				case Protocol.PEER_REMOVE_FROM_ROUTING_TABLE_TO_PEER:
+					event = new PeerRemoveFromRoutingTableToPeer(marshalledBytes);
+					break;
+				// PEER_LEFT_LEAF_ROUTE_TRACE_TO_PEER = 7019
+				case Protocol.PEER_LEFT_LEAF_ROUTE_TRACE_TO_PEER:
+					event = new PeerLeftLeafRouteTraceToPeer(marshalledBytes);
+					break;
+				// PEER_RIGHT_LEAF_ROUTE_TRACE_TO_PEER = 7020
+				case Protocol.PEER_RIGHT_LEAF_ROUTE_TRACE_TO_PEER:
+					event = new PeerRightLeafRouteTraceToPeer(marshalledBytes);
+					break;
+				// STOREDATA_STORE_REQUEST_TO_DISCOVERY = 8000
+				case Protocol.STOREDATA_STORE_REQUEST_TO_DISCOVERY:
+					event = new StoreDataStoreRequestToDiscovery(marshalledBytes);
+					break;
+				// STOREDATA_SEND_STORE_REQUEST_TO_PEER = 8001
+				case Protocol.STOREDATA_SEND_STORE_REQUEST_TO_PEER:
+					event = new StoreDataSendStoreRequestToPeer(marshalledBytes);
+					break;
+				// STOREDATA_SEND_FILE_TO_PEER = 8002
+				case Protocol.STOREDATA_SEND_FILE_TO_PEER:
+					event = new StoreDataSendFileToPeer(marshalledBytes);
+					break;
+				// STOREDATA_READ_REQUEST_TO_DISCOVERY = 8003
+				case Protocol.STOREDATA_READ_REQUEST_TO_DISCOVERY:
+					event = new StoreDataReadRequestToDiscovery(marshalledBytes);
+					break;
+				// STOREDATA_SEND_READ_REQUEST_TO_PEER = 8004
+				case Protocol.STOREDATA_SEND_READ_REQUEST_TO_PEER:
+					event = new StoreDataSendReadRequestToPeer(marshalledBytes);
+					break;
 				default:
 					System.out.println("Invalid Message Type");
 					return null;

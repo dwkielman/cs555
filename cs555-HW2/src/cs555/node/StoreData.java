@@ -1,19 +1,34 @@
 package cs555.node;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Scanner;
+import java.util.logging.Logger;
 
-import cs555.transport.TCPReceiverThread;
 import cs555.transport.TCPSender;
 import cs555.transport.TCPServerThread;
+import cs555.util.HexConverter;
 import cs555.util.NodeInformation;
+import cs555.wireformats.DiscoveryReadRequestResponseToStoreData;
+import cs555.wireformats.DiscoveryStoreRequestResponseToStoreData;
 import cs555.wireformats.Event;
+import cs555.wireformats.PeerSendFileToStoreData;
+import cs555.wireformats.PeerStoreDestinationToStoreData;
+import cs555.wireformats.Protocol;
+import cs555.wireformats.StoreDataReadRequestToDiscovery;
+import cs555.wireformats.StoreDataSendFileToPeer;
+import cs555.wireformats.StoreDataSendReadRequestToPeer;
+import cs555.wireformats.StoreDataSendStoreRequestToPeer;
+import cs555.wireformats.StoreDataStoreRequestToDiscovery;
 
 public class StoreData implements Node {
 	
@@ -21,12 +36,12 @@ public class StoreData implements Node {
 	private NodeInformation discoveryNodeInformation;
 	private String localHostIPAddress;
 	private int localHostPortNumber;
-	private TCPReceiverThread storeDataTCPReceiverThread;
 	private TCPServerThread tCPServerThread;
 	private Thread thread;
-	private TCPSender discoverySender;
+	//private TCPSender discoverySender;
 	private NodeInformation storeDataNodeInformation;
 	private static StoreData storeData;
+	private final static Logger LOGGER = Logger.getLogger(Discovery.class.getName());
 	
 	private static final int SIZE_OF_CHUNK = 1024 * 64;
 	
@@ -48,8 +63,6 @@ public class StoreData implements Node {
 			uhe.printStackTrace();
 		}
 		this.storeDataNodeInformation = new NodeInformation(this.localHostIPAddress, this.localHostPortNumber);
-		// Once the initialization is complete, client should send a registration request to the controller.
-		//connectToDiscovery();
 	}
 	
 	@Override
@@ -57,28 +70,22 @@ public class StoreData implements Node {
 		int eventType = event.getType();
 		if (DEBUG) { System.out.println("Event " + eventType + " Passed to Client."); }
 		switch(eventType) {
-		/**
-			// CONTROLLER_REGISTER_RESPONSE_TO_CLIENT = 6001
-			case Protocol.CONTROLLER_REGISTER_RESPONSE_TO_CLIENT:
-				handleControllerRegisterResponse(event);	
+			// DISCOVERY_STORE_REQUEST_RESPONSE_TO_STOREDATA = 6002
+			case Protocol.DISCOVERY_STORE_REQUEST_RESPONSE_TO_STOREDATA:
+				handleDiscoveryStoreRequestResponseToStoreData(event);
 				break;
-			// CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT = 6002
-			case Protocol.CONTROLLER_CHUNKSERVERS_RESPONSE_TO_CLIENT:
-				handleControllerChunkServersResponse(event);
+			// DISCOVERY_READ_REQUEST_RESPONSE_TO_STOREDATA = 6003
+			case Protocol.DISCOVERY_READ_REQUEST_RESPONSE_TO_STOREDATA:
+				handleDiscoveryReadRequestResponseToStoreData(event);
 				break;
-			// CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT = 6003
-			case Protocol.CONTROLLER_CHUNKSERVER_TO_READ_RESPONSE_TO_CLIENT:
-				handleControllerChunkServerToReadResponseToClient(event);
+			// PEER_STORE_DESTINATION_TO_STORE_DATA = 7007
+			case Protocol.PEER_STORE_DESTINATION_TO_STORE_DATA:
+				handlePeerStoreDestinationToStoreData(event);
 				break;
-			// CONTROLLER_RELEASE_CLIENT = 6008
-			case Protocol.CONTROLLER_RELEASE_CLIENT:
-				handleControllerReleaseClient(event);
+			// PEER_SEND_FILE_TO_STORE_DATA = 7009
+			case Protocol.PEER_SEND_FILE_TO_STORE_DATA:
+				handlePeerSendFileToStoreData(event);
 				break;
-			// CHUNKSERVER_SEND_CHUNK_TO_CLIENT = 7002
-			case Protocol.CHUNKSERVER_SEND_CHUNK_TO_CLIENT:
-				ChunkServerSendChunkToClient(event);
-				break;
-				**/
 			default:
 				System.out.println("Invalid Event to Node.");
 				return;
@@ -114,7 +121,8 @@ public class StoreData implements Node {
 		try {
 			discoveryPortNumber = Integer.parseInt(args[1]);
 		} catch (NumberFormatException nfe) {
-			System.out.println("Invalid argument. Second argument must be a number.");
+			//System.out.println("Invalid argument. Second argument must be a number.");
+			LOGGER.severe("Invalid argument. Second argument must be a number.");
 			nfe.printStackTrace();
 		}
 		
@@ -139,15 +147,25 @@ public class StoreData implements Node {
             		String filename;
             		System.out.println("Enter the name of the file that you wish to store: ");
 					filename = scan.nextLine();
+					
+					System.out.println("Enter the name of the ID that you wish to use (Leave blank to auto-generate an ID): ");
+					String id = scan.nextLine();
+					byte[] idBytes;
+					
+					if (!id.equals("")) {
+						idBytes = HexConverter.convertHexToBytes(id);
+					} else {
+						try {
+							id = autogenerateKey(filename);
+							idBytes = HexConverter.convertHexToBytes(id);
+						} catch (NoSuchAlgorithmException e) {
+							e.printStackTrace();
+						}
+					}
+					
 					File file = new File(filename);
 					if (file.exists()) {
-						//this.accessUserInput = false;
-						/**
-						int chunkNumber = 0;
-						long timestamp = file.lastModified();
-						this.fileIntoChunks = splitFileIntoBytes(file, chunkNumber);
-						sendClientChunkServerRequestToController(filename, chunkNumber, timestamp);
-						**/
+						sendStoreDataStoreRequestToDiscovery(filename, id);
 					} else {
 						System.out.println("File does not exist. Please try again.");
 					}
@@ -157,10 +175,22 @@ public class StoreData implements Node {
             		String filenameToRead;
             		System.out.println("Enter the name of the file that you wish to read: ");
             		filenameToRead = scan.nextLine();
-            		//this.accessUserInput = false;
-            		/**
-            		sendClientReadFileRequestToController(filenameToRead, 0);
-            		**/
+            		System.out.println("Enter the name of the ID that you wish to use (Leave blank to auto-generate an ID): ");
+					String idRead = scan.nextLine();
+					byte[] idReadBytes;
+					
+					if (!idRead.equals("")) {
+						idReadBytes = HexConverter.convertHexToBytes(idRead);
+					} else {
+						try {
+							idRead = autogenerateKey(filenameToRead);
+							idReadBytes = HexConverter.convertHexToBytes(idRead);
+						} catch (NoSuchAlgorithmException e) {
+							e.printStackTrace();
+						}
+					}
+					sendStoreDataReadRequestToDiscovery(filenameToRead, idRead);
+					
             		break;
             	case "Q":
             		if (DEBUG) { System.out.println("User selected Quit."); }
@@ -172,33 +202,239 @@ public class StoreData implements Node {
         }
 	}
 	
-	/**
-	private void connectToDiscovery() {
-		if (DEBUG) { System.out.println("begin StoreData connectToDiscovery"); }
+	private void sendStoreDataStoreRequestToDiscovery(String filename, String key) {
+		if (DEBUG) { System.out.println("begin StoreData sendStoreDataStoreRequestToDiscovery"); }
+		
 		try {
-			System.out.println("Attempting to connect to Discovery " + this.controllerNodeInformation.getNodeIPAddress() + " at Port Number: " + this.controllerNodeInformation.getNodePortNumber());
-			Socket controllerSocket = new Socket(this.controllerNodeInformation.getNodeIPAddress(), this.controllerNodeInformation.getNodePortNumber());
+			StoreDataStoreRequestToDiscovery storeRequest = new StoreDataStoreRequestToDiscovery(this.storeDataNodeInformation, filename, key);
+			Socket socket = new Socket(this.discoveryNodeInformation.getNodeIPAddress(), this.discoveryNodeInformation.getNodePortNumber());
+			TCPSender sender = new TCPSender(socket);
 			
-			System.out.println("Starting TCPReceiverThread with Controller");
-			clientTCPReceiverThread = new TCPReceiverThread(controllerSocket, this);
-			Thread tcpReceiverThread = new Thread(this.clientTCPReceiverThread);
-			tcpReceiverThread.start();
-			
-			System.out.println("TCPReceiverThread with Controller started");
-			System.out.println("Sending to " + this.controllerNodeInformation.getNodeIPAddress() + " on Port " +  this.controllerNodeInformation.getNodePortNumber());
-			
-			this.controllerSender = new TCPSender(controllerSocket);
-			
-			ClientRegisterRequestToController clientRegisterRequest = new ClientRegisterRequestToController(this.clientNodeInformation.getNodeIPAddress(), this.clientNodeInformation.getNodePortNumber());
+			sender.sendData(storeRequest.getBytes());
 
-			if (DEBUG) { System.out.println("ChunkServer about to send message type: " + clientRegisterRequest.getType()); }
-			
-			this.controllerSender.sendData(clientRegisterRequest.getBytes());
 		} catch (IOException ioe) {
 			ioe.printStackTrace();
-			System.exit(1);
 		}
-		if (DEBUG) { System.out.println("end Client connectToController"); }
+		
+		if (DEBUG) { System.out.println("end StoreData sendStoreDataStoreRequestToDiscovery"); }
 	}
-	**/
+	
+	private void handleDiscoveryStoreRequestResponseToStoreData(Event event) {
+		if (DEBUG) { System.out.println("begin StoreData handleDiscoveryStoreRequestResponseToStoreData"); }
+		DiscoveryStoreRequestResponseToStoreData storeResponse = (DiscoveryStoreRequestResponseToStoreData) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + storeResponse.getType()); }
+		
+		NodeInformation peer = storeResponse.getPeer();
+		String filename = storeResponse.getFilename();
+		String key = storeResponse.getKey();
+		
+		ArrayList<String> traceList = new ArrayList<String>();
+		traceList.add("StoreData");
+		int hopCount = 0;
+		//System.out.println("Initiating Lookup for Storing a file. Discovery has sent Random Node: " + peer);
+		//System.out.println("File to be Stored: " + filename);
+		//System.out.println("Assigned File Key: " + key);
+		
+		LOGGER.info("Initiating Lookup to Store a file. Discovery has sent Random Node: " + peer);
+		LOGGER.info("File to be Stored: " + filename);
+		LOGGER.info("Assigned File Identifier: " + key);
+		
+		StoreDataSendStoreRequestToPeer storeRequestToPeer = new StoreDataSendStoreRequestToPeer(filename, key, this.storeDataNodeInformation, traceList.size(), traceList, hopCount);
+		
+		try {
+			Socket socket = new Socket(peer.getNodeIPAddress(), peer.getNodePortNumber());
+			TCPSender sender = new TCPSender(socket);
+			
+			sender.sendData(storeRequestToPeer.getBytes());
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+		}
+
+		if (DEBUG) { System.out.println("end StoreData handleDiscoveryStoreRequestResponseToStoreData"); }
+	}
+	
+	private void handlePeerStoreDestinationToStoreData(Event event) {
+		if (DEBUG) { System.out.println("begin StoreData handlePeerStoreDestinationToStoreData"); }
+		PeerStoreDestinationToStoreData storeDestination = (PeerStoreDestinationToStoreData) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + storeDestination.getType()); }
+		
+		NodeInformation peer = storeDestination.getPeer();
+		String filename = storeDestination.getFilename();
+		String key = storeDestination.getKey();
+		ArrayList<String> traceList = storeDestination.getTraceList();
+		int hopCount = storeDestination.getHopCount();
+		
+		//System.out.println("Lookup Copmplete for Storing a file. Destination Peer: " + peer);
+		LOGGER.info("Lookup Copmplete for Storing a file. Destination Peer: " + peer);
+		String traceString = "";
+        for (String s : traceList) {
+        	traceString = traceString + s + "-";
+        }
+        
+        traceString = traceString.substring(0, traceString.length() - 1);
+        
+        //System.out.println("Trace: " + traceString);
+        //System.out.println("Hop Count: " + hopCount);
+        LOGGER.info("Trace: " + traceString);
+        LOGGER.info("Hop Count: " + hopCount);
+		
+		File file = new File(filename);
+		if (file.exists()) {
+			try {
+				byte[] filebytes = new byte[(int) file.length()];
+				FileInputStream fis = new FileInputStream(file);
+				fis.read(filebytes);
+				fis.close();
+				
+				StoreDataSendFileToPeer sendFile = new StoreDataSendFileToPeer(filename, key, filebytes);
+				
+				Socket socket = new Socket(peer.getNodeIPAddress(), peer.getNodePortNumber());
+				TCPSender sender = new TCPSender(socket);
+				
+				sender.sendData(sendFile.getBytes());
+				
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		
+		if (DEBUG) { System.out.println("end StoreData handlePeerStoreDestinationToStoreData"); }
+	}
+	
+	private void sendStoreDataReadRequestToDiscovery(String filename, String key) {
+		if (DEBUG) { System.out.println("begin StoreData sendStoreDataReadRequestToDiscovery"); }
+		
+		try {
+			StoreDataReadRequestToDiscovery readRequest = new StoreDataReadRequestToDiscovery(this.storeDataNodeInformation, filename, key);
+			Socket socket = new Socket(this.discoveryNodeInformation.getNodeIPAddress(), this.discoveryNodeInformation.getNodePortNumber());
+			TCPSender sender = new TCPSender(socket);
+			
+			sender.sendData(readRequest.getBytes());
+
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+		}
+		
+		if (DEBUG) { System.out.println("end StoreData sendStoreDataReadRequestToDiscovery"); }
+	}
+	
+	private void handleDiscoveryReadRequestResponseToStoreData(Event event) {
+		if (DEBUG) { System.out.println("begin StoreData handleDiscoveryReadRequestResponseToStoreData"); }
+		DiscoveryReadRequestResponseToStoreData readResponse = (DiscoveryReadRequestResponseToStoreData) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + readResponse.getType()); }
+		
+		NodeInformation peer = readResponse.getPeer();
+		String filename = readResponse.getFilename();
+		String key = readResponse.getKey();
+		
+		ArrayList<String> traceList = new ArrayList<String>();
+		traceList.add("StoreData");
+		int hopCount = 0;
+		
+		//System.out.println("Initiating Lookup to Read a file. Discovery has sent Random Node: " + peer);
+		//System.out.println("File to be Read: " + filename);
+		//System.out.println("Assigned File Key: " + key);
+		LOGGER.info("Initiating Lookup to Read a file. Discovery has sent Random Node: " + peer);
+		LOGGER.info("File to be Read: " + filename);
+		LOGGER.info("Assigned File Identifier: " + key);
+		
+		StoreDataSendReadRequestToPeer readRequestToPeer = new StoreDataSendReadRequestToPeer(filename, key, this.storeDataNodeInformation, traceList.size(), traceList, hopCount);
+		
+		try {
+			Socket socket = new Socket(peer.getNodeIPAddress(), peer.getNodePortNumber());
+			TCPSender sender = new TCPSender(socket);
+			
+			sender.sendData(readRequestToPeer.getBytes());
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+		}
+
+		if (DEBUG) { System.out.println("end StoreData handleDiscoveryReadRequestResponseToStoreData"); }
+	}
+	
+	private void handlePeerSendFileToStoreData(Event event) {
+		if (DEBUG) { System.out.println("begin StoreData handlePeerSendFileToStoreData"); }
+		PeerSendFileToStoreData recievedFile = (PeerSendFileToStoreData) event;
+		if (DEBUG) { System.out.println("Peer Node got a message type: " + recievedFile.getType()); }
+		
+		NodeInformation peer = recievedFile.getPeer();
+		String filename = recievedFile.getFilename();
+		String key = recievedFile.getKey();
+		ArrayList<String> traceList = recievedFile.getTraceList();
+		int hopCount = recievedFile.getHopCount();
+		byte[] receivedBytes = recievedFile.getFileBytes();
+		
+		//System.out.println("Lookup Copmplete for Reading a file. Destination Peer: " + peer);
+		LOGGER.info("Lookup Copmplete for Reading a file. Destination Peer: " + peer);
+		
+		String traceString = "";
+        for (String s : traceList) {
+        	traceString = traceString + s + "-";
+        }
+        
+        traceString = traceString.substring(0, traceString.length() - 1);
+        
+        //System.out.println("Trace: " + traceString);
+        //System.out.println("Hop Count: " + hopCount);
+        LOGGER.info("Trace: " + traceString);
+        LOGGER.info("Hop Count: " + hopCount);
+		
+        saveFile(filename, receivedBytes);
+		
+		if (DEBUG) { System.out.println("end StoreData handlePeerSendFileToStoreData"); }
+	}
+	
+	private void saveFile(String filename, byte[] data) {
+		
+		String path = "/tmp/received_dkielman/";
+		File pathFile = new File(path);
+		if (!pathFile.exists()) {
+			pathFile.mkdir();
+		}
+		
+		String receivedFileName = filename.substring(filename.lastIndexOf("/") + 1, filename.length());
+		
+		System.out.println("Attemping to write to the following directory:");
+		System.out.println(path);
+		
+		String receivedFilePath = path + receivedFileName;
+		System.out.println("Received Path is as follows: ");
+		System.out.println(receivedFilePath);
+		File receivedFile = new File(receivedFilePath);
+		try {
+			if (!receivedFile.exists()) {
+					receivedFile.createNewFile();
+			} 
+			
+			FileOutputStream fos = new FileOutputStream(receivedFile);
+			fos.write(data, 0, data.length);
+			
+			fos.close();
+			System.out.println("SUCCESS: File has been saved to the following location: " + pathFile.getAbsolutePath());
+			System.out.println("Finished saving file: " + filename);
+		} catch (IOException e) {
+			System.out.println("FAILURE: An error has occurred while attempting to save the received file.");
+			e.printStackTrace();
+		}
+	}
+	
+	private String autogenerateKey(String filename) throws NoSuchAlgorithmException {
+		MessageDigest cript = MessageDigest.getInstance("SHA-1");
+		cript.reset();
+		cript.update(filename.getBytes());
+
+		StringBuffer sb = new StringBuffer("");
+
+		byte[] messageDataBytes = cript.digest();
+		for (int i = 0; i < messageDataBytes.length; i++) {
+			sb.append(Integer.toString((messageDataBytes[i] & 0xff) + 0x100, 16));
+		}
+		String keyString = "" + sb.toString().charAt(1)
+				+ sb.toString().charAt(2) + sb.toString().charAt(4)
+				+ sb.toString().charAt(8);
+
+		return keyString.toUpperCase();
+	}
 }

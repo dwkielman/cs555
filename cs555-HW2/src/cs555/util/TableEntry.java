@@ -10,7 +10,6 @@ import java.io.IOException;
 
 public class TableEntry {
 	
-	
 	private String identifier;
 	private NodeInformation nodeInformation;
 	private String nickname;
@@ -115,6 +114,10 @@ public class TableEntry {
 		this.nickname = nickname;
 	}
 	
-	
+	@Override
+	public String toString() {
+		String returnString = "Identifier: " + this.identifier + ", NodeInformation: " + this.nodeInformation + ", Nickname: " + this.nickname;
+		return returnString;
+	}
 
 }
