@@ -29,7 +29,10 @@ public class DataUtilities {
 	    
 	    for (int i=0; i < s.length(); i++) {
 	    	if ((s.charAt(i) == cellDelimiter) && isInCell){
-	    		entries.add(s.substring(charCounter, i));
+	    		String entry = s.substring(charCounter, i);
+	    		entry = entry.replaceAll("^\"|\"$", "");
+	    		//entries.add(s.substring(charCounter, i));
+	    		entries.add(entry);
 	    		charCounter = i + 1;
 	    	} else if (s.charAt(i) == quoteDelimiter) {
 	    		isInCell = !isInCell;
