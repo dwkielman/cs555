@@ -20,8 +20,6 @@ public class Q03Job {
 	        Job job = Job.getInstance(conf, "Q03Job");
 	        // Current class.
 	        job.setJarByClass(Q03Job.class);
-	        
-	        
 	        // Combiner. We use the reducer as the combiner in this case.
 	        //job.setCombinerClass(Q03Combiner.class);
 		    // Mapper
@@ -30,7 +28,7 @@ public class Q03Job {
 	        // Combiner
 	        //job.setCombinerClass(HW3Combiner.class);
 	        // Reducer
-	        job.setReducerClass(Q03ReducerNew.class);
+	        job.setReducerClass(Q03Reducer.class);
 	        // Outputs from the Mapper.
 	        job.setMapOutputKeyClass(Text.class);
 	        job.setMapOutputValueClass(Text.class);

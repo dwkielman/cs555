@@ -90,25 +90,6 @@ public class Q04Reducer extends Reducer<Text, Text, Text, Text> {
 			context.write(new Text(airportCount + ": (" + airport + ") " + airportName), new Text("Total Number of Weather Delays:\t" + airportCountMap.get(airport) + "\tTotal Number of Minutes of Lost to Weather Delays:\t" + totalDelay));
 			
 		}
-		
-		/**
-		if (airportCountMap.size() > 10) {
-			 airportSize = 10;
-		} else {
-			airportSize = airportCountMap.size();
-		}
-		
-		int airportCount = 0;
-		for (String airport : airportCountMap.keySet()) {
-			if (airportCount >= airportSize) {
-				break;
-			}
-			String airportName = airportCodeMap.get(airport);
-			context.write(new Text(airportName), new Text("Number of Weather Delays: " + airportCountMap.get(airport)));
-			airportCount++;
-		}
-		**/
-		
 	}
 	
 }

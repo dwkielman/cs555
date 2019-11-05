@@ -80,11 +80,11 @@ public class Q07Reducer extends Reducer<Text, Text, Text, Text> {
 		
 		context.write(new Text("QUESTION 7: "), new Text("What are the aspects that you can infer from the LateAircraftDelay field?"));
 		
-		context.write(new Text("QUESTION 7: "), new Text("What are the airports with the most Late Aircrafts? Has there been a change over the 21-year period covered by this dataset?"));
+		context.write(new Text("QUESTION 7: "), new Text("What are the airports with the most delays due to Late Aircrafts? Has there been a change over the 21-year period covered by this dataset?"));
 		
 		HashMap<String, Integer> airportTotals = new HashMap<String, Integer>();
-		HashMap<String, Double> airlineTotalLateAircraftDelay = new HashMap<String, Double>();
-		HashMap<String, Double> carrierAverageTotals = new HashMap<String, Double>();
+		HashMap<String, Double> airportTotalLateAircraftDelay = new HashMap<String, Double>();
+		HashMap<String, Double> airportAverageTotals = new HashMap<String, Double>();
 		
 		for (int year : yearCountMap.keySet()) {
 			HashMap<String, ArrayList<Double>> yearsAirportCount = yearCountMap.get(year);
@@ -98,18 +98,18 @@ public class Q07Reducer extends Reducer<Text, Text, Text, Text> {
 					double currentSum = yearsAirportCount.get(iata).stream().mapToDouble(Double::doubleValue).sum();
 					int currentCount = yearsAirportCount.get(iata).size();
 
-					if (airlineTotalLateAircraftDelay.containsKey(iata)) {
-						double sum = airlineTotalLateAircraftDelay.get(iata);
-						currentSum += sum;
-						airlineTotalLateAircraftDelay.replace(iata, currentSum);
+					if (airportTotalLateAircraftDelay.containsKey(iata)) {
+						double sum = airportTotalLateAircraftDelay.get(iata);
+						sum += currentSum;
+						airportTotalLateAircraftDelay.replace(iata, sum);
 					} else {
-						airlineTotalLateAircraftDelay.put(iata, currentSum);
+						airportTotalLateAircraftDelay.put(iata, currentSum);
 					}
 					
 					if (airportTotals.containsKey(iata)) {
 						int count = airportTotals.get(iata);
-						currentCount += count;
-						airportTotals.replace(iata, currentCount);
+						count += currentCount;
+						airportTotals.replace(iata, count);
 					} else {
 						airportTotals.put(iata, currentCount);
 					}
@@ -148,37 +148,59 @@ public class Q07Reducer extends Reducer<Text, Text, Text, Text> {
 				
 				airportCount++;
 				context.write(new Text(airportCount + ": (" + airport + ") " + airportName), new Text("Total Number of Late Aircrafts:\t" + delayCount + "\tTotal Number of Minutes that were Lost to Late Aircrafts:\t" + totalDelay + "\tAverage Number of Minutes that were Lost to Late Aircrafts:\t" + averageDelay));
-				
-				//context.write(new Text(airportCount + ": (" + airport + ") " + airportName), new Text("Total Number of Minutes that were Lost to Late Aircrafts:\t" + Double.toString(totalDelay)));
-				
-				//context.write(new Text(airportCount + ": (" + airport + ") " + airportName), new Text("Average Number of Minutes that were Lost to Late Aircrafts:\t" + Double.toString(averageDelay)));
-				
 			}
 		}
 		
-		if (!airportTotals.isEmpty() && !airlineTotalLateAircraftDelay.isEmpty()) {
+		Map<String, Integer> sortedTopAirportsrMap =
+				airportTotals.entrySet().stream()
+                .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
+                        (e1, e2) -> e1, LinkedHashMap::new));
+		
+		int airportSize = 0;
+		
+		if (sortedTopAirportsrMap.size() > 10) {
+			 airportSize = 10;
+		} else {
+			airportSize = sortedTopAirportsrMap.size();
+		}
+		
+		int airportCount = 0;
+		
+		context.write(new Text(""), new Text(""));
+		context.write(new Text("Which airlines experience the most late aircraft related delays? "), new Text("Please list the top 10."));
+		
+		for (String airport : sortedTopAirportsrMap.keySet()) {
+			if (airportCount >= airportSize) {
+				break;
+			}
+			int delayCount = airportTotals.get(airport);
+			String airportName = airportCodeMap.get(airport);
+			double totalDelay = airportTotalLateAircraftDelay.get(airport);
+			double averageDelay = totalDelay / delayCount;
+			
+			airportCount++;
+			context.write(new Text(airportCount + ": (" + airport + ") " + airportName), new Text("Total Number of Late Aircrafts:\t" + delayCount + "\tTotal Number of Minutes that were Lost to Late Aircrafts:\t" + totalDelay + "\tAverage Number of Minutes that were Lost to Late Aircrafts:\t" + averageDelay));
+		}
+		
+		if (!airportTotals.isEmpty() && !airportTotalLateAircraftDelay.isEmpty()) {
 
 			for (String s : airportTotals.keySet()) {
-				double mean = airlineTotalLateAircraftDelay.get(s) / airportTotals.get(s);
-				carrierAverageTotals.put(s, mean);
+				double mean = airportTotalLateAircraftDelay.get(s) / airportTotals.get(s);
+				airportAverageTotals.put(s, mean);
 			}
 			
-			if (!carrierAverageTotals.isEmpty()) {
+			if (!airportAverageTotals.isEmpty()) {
 				context.write(new Text(""), new Text(""));
 				context.write(new Text("Which city has the highest average late aircraft delay across all data?"), new Text());
-				String mostDelayCarrier = carrierAverageTotals.entrySet().stream().max((entry1, entry2) -> entry1.getValue() > entry2.getValue() ? 1 : -1).get().getKey();
-				int delayCount = airportTotals.get(mostDelayCarrier);
-				double totalDelay = airlineTotalLateAircraftDelay.get(mostDelayCarrier);
-				double averageDelay = carrierAverageTotals.get(mostDelayCarrier);
+				String mostDelayAirline = airportAverageTotals.entrySet().stream().max((entry1, entry2) -> entry1.getValue() > entry2.getValue() ? 1 : -1).get().getKey();
+				int delayCount = airportTotals.get(mostDelayAirline);
+				double totalDelay = airportTotalLateAircraftDelay.get(mostDelayAirline);
+				double averageDelay = airportAverageTotals.get(mostDelayAirline);
 				
-				String airportName = airportCodeMap.get(mostDelayCarrier);
+				String airportName = airportCodeMap.get(mostDelayAirline);
 				
-				context.write(new Text("(" + mostDelayCarrier + ") " + airportName), new Text("Total Number of Late Aircrafts:\t" + delayCount  + "\tTotal Number of Minutes that were Lost to Late Aircrafts:\t" + totalDelay + "\tAverage Number of Minutes that were Lost to Late Aircrafts:\t" + averageDelay));
-
-				//context.write(new Text("(" + mostDelayCarrier + ") " + airportName), new Text("Total Number of Minutes that were Lost to Delays: " + Double.toString(sum)));
-
-				//context.write(new Text("(" + mostDelayCarrier + ") " + airportName), new Text("Average Number of Minutes that were Lost to Delays: " + Double.toString(average)));
-				
+				context.write(new Text("(" + mostDelayAirline + ") " + airportName), new Text("Total Number of Late Aircrafts:\t" + delayCount  + "\tTotal Number of Minutes that were Lost to Late Aircrafts:\t" + totalDelay + "\tAverage Number of Minutes that were Lost to Late Aircrafts:\t" + averageDelay));
 			}
 		}
 		

@@ -14,13 +14,8 @@ public class Q05Mapper extends Mapper<LongWritable, Text, Text, Text> {
 	@Override
     protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
 		if(!value.toString().isEmpty()){
-			//ArrayList<String> record = DataUtilities.dataReader(value.toString());
 			String[] record = value.toString().split(",");
-			
-			//if (record.size() >= 25) {
-				//String uniqueCarrier = record.get(9);
-				//String carrierDelay = record.get(25);
-				
+
 			if (record.length >= 25) {
 				String uniqueCarrier = record[8];
 				String carrierDelay = record[24];

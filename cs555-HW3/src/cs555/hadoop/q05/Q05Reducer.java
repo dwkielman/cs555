@@ -98,33 +98,8 @@ public class Q05Reducer extends Reducer<Text, Text, Text, Text> {
 			airportCount++;
 			
 			context.write(new Text(airportCount + ": (" + airport + ") " + airportName), new Text("Total Number of Carrier Delays:\t" + carrierTotals.get(airport) + "\tTotal Number of Minutes that were Lost to Delays:\t" + sum + "\tAverage Number of Minutes that were Lost to Delays:\t" + average));
-			
-			//context.write(new Text(airportCount + ": (" + airport + ") " + airportName), new Text("Total Number of Minutes that were Lost to Delays: " + Double.toString(sum)));
-			
-			//context.write(new Text(airportCount + ": (" + airport + ") " + airportName), new Text("Average Number of Minutes that were Lost to Delays: " + Double.toString(average)));
 		}
-		
-		/**
-		int carrierSize = 0;
-		
-		if (carrierTotals.size() > 10) {
-			carrierSize = 10;
-		} else {
-			carrierSize = carrierTotals.size();
-		}
-		
-		int carrierCount = 0;
-		for (String carrier : carrierTotals.keySet()) {
-			if (carrierCount >= carrierSize) {
-				break;
-			}
-			String carrierName = carrierCodeMap.get(carrier);
-			context.write(new Text(carrierName), new Text("Number of Carrier Delays: " + carrierTotals.get(carrier)));
-			int sum = carrierTotalCountMap.get(carrierName).stream().mapToInt(Integer::intValue).sum();
-			context.write(new Text(carrierName), new Text("Total Number of Minutes taht were Lost to Delays: " + sum));
-			carrierCount++;
-		}
-		 **/
+
 		if (!carrierAverageTotals.isEmpty()) {
 			String mostDelayCarrier = carrierAverageTotals.entrySet().stream().max((entry1, entry2) -> entry1.getValue() > entry2.getValue() ? 1 : -1).get().getKey();
 			
@@ -134,10 +109,6 @@ public class Q05Reducer extends Reducer<Text, Text, Text, Text> {
 			
 			context.write(new Text("Which carrier has the highest average delay?"), new Text());
 			context.write(new Text("(" + mostDelayCarrier + ") " + airportName), new Text("Total Number of Carrier Delays:\t" + carrierTotals.get(mostDelayCarrier) + "\tTotal Number of Minutes that were Lost to Delays:\t" + sum + "\tAverage Number of Minutes that were Lost to Delays:\t" + average));
-			
-			//context.write(new Text("(" + mostDelayCarrier + ") " + airportName), new Text("Total Number of Minutes that were Lost to Delays: " + Double.toString(sum)));
-			
-			//context.write(new Text("(" + mostDelayCarrier + ") " + airportName), new Text("Average Number of Minutes that were Lost to Delays: " + Double.toString(average)));
 		}
 	}
 

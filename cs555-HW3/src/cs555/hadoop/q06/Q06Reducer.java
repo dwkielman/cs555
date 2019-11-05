@@ -92,16 +92,6 @@ public class Q06Reducer extends Reducer<Text, Text, Text, Text> {
 				}
 			}
 		}
-		/**
-		for (Text val : values) {
-			double delay = Double.parseDouble(val.toString());
-			if (key.toString().equals("EAST")) {
-				eastCoastTotalList.add(delay);
-			} else if (key.toString().equals("WEST")) {
-				westCoastTotalList.add(delay);
-			}
-		}
-		**/
 	}
 	
 	@Override
@@ -128,7 +118,7 @@ public class Q06Reducer extends Reducer<Text, Text, Text, Text> {
 			    .mapToDouble(a -> a)
 			    .sum();
 		
-		// could do something fancy here, get the airport name and use it to display who has the most
+		// get the airport name and use it to display who has the most
 		Map<String, Integer> eastSortedTopAirportsByYearMap =
 				eastAirportCountMap.entrySet().stream()
                 .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
@@ -155,7 +145,6 @@ public class Q06Reducer extends Reducer<Text, Text, Text, Text> {
 				String airportName = airportCodeMap.get(iata);
 				
 				context.write(new Text(airportCount + ": (" + iata + ") " + airportName), new Text("Total Number of Delays:\t" + totalCount + "\tTotal Number of Minutes that were Lost to Delays:\t" + totalMinutes));
-				//context.write(new Text(airportCount + ": (" + iata + ") " + airportName), new Text("Total Number of Minutes that were Lost to Delays: " + Double.toString(totalMinutes)));
 				airportCount++;
 			}
 		}
@@ -176,13 +165,11 @@ public class Q06Reducer extends Reducer<Text, Text, Text, Text> {
 				String airportName = airportCodeMap.get(iata);
 				
 				context.write(new Text(airportCount + ": (" + iata + ") " + airportName), new Text("Total Number of Delays:\t" + totalCount + "\tTotal Number of Minutes that were Lost to Delays:\t" + totalMinutes));
-				//context.write(new Text(airportCount + ": (" + iata + ") " + airportName), new Text("Total Number of Minutes that were Lost to Delays: " + Double.toString(totalMinutes)));
 				airportCount++;
 			}
 		}
 		
-		
-		
+		context.write(new Text(""), new Text(""));
 		context.write(new Text(winner + " Coast airports have more Delays."), new Text("Total number of delayed flights: " + totalDelayed));
 	}
 }

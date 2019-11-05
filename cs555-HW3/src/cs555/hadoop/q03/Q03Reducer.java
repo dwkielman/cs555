@@ -1,6 +1,7 @@
 package cs555.hadoop.q03;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -12,113 +13,112 @@ import org.apache.hadoop.mapreduce.Reducer;
 public class Q03Reducer extends Reducer<Text, Text, Text, Text> {
 
 	private HashMap<String, Integer> airportCountMap;
-	private HashMap<String, String> airportInfoMap;
+	private HashMap<String, String> airportCodeMap;
 	private HashMap<Integer, HashMap<String, Integer>> yearCountMap;
-	private HashMap<String, Integer> debugMMap;
 	
 	@Override
     public void setup(Context context) throws IOException, InterruptedException {
 		super.setup(context);
 		airportCountMap = new HashMap<String, Integer>();
-		airportInfoMap = new HashMap<String, String>();
+		airportCodeMap = new HashMap<String, String>();
 		yearCountMap = new HashMap<Integer, HashMap<String, Integer>>();
-		debugMMap = new HashMap<String, Integer>();
 	}
 	
 	@Override
     protected void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
 		
-		String[] keyStringArray = key.toString().split(":");
-		String keyString = keyStringArray[0];
-		String keyStringAttribute = keyStringArray[1];
-		
 		HashMap<String, Integer> tempAirportCountMap = new HashMap<String, Integer>();
 		
-		int count = 0;
-		
-		for (Text value : values) {
-			count++;
-		}
-		
-		debugMMap.put(key.toString(), count);
-		
-		for (Text value : values) {
-			String[] parts = value.toString().split(",");
+		String[] keyStringArray = key.toString().split(":");
+		if (keyStringArray.length == 2) {
+			String keyString = keyStringArray[0];
+			String keyStringAttribute = keyStringArray[1];
 			
-			String iata = "";
-			int flightCount = 0;
-			String city = "";
-			String state = "";
-			String name = "";
-			
-			for (int i = 0; i < parts.length; i++) {
-				
-				String[] info = parts[i].split(":");
-				if (info.length == 2) {
-					if (info[0].equals("AIRPORTCODE")) {
-						iata = info[1];
-					} else if (info[0].equals("FLIGHTCOUNT")) {
-						flightCount = Integer.parseInt(info[1]);
-						/**
-					} else if (info[0].equals("AIRPORT")) {
-						name = info[1];
-					} else if (info[0].equals("CITY")) {
-						city = info[1];
-						**/
-					} else if (info[0].equals("STATE")) {
-						state = info[1];
+			if (keyString.equals("YEAR")) {
+				for (Text val : values) {
+					String iata = val.toString();
+					if (tempAirportCountMap.containsKey(iata)) {
+						int currentCount = tempAirportCountMap.get(iata);
+						currentCount++;
+						tempAirportCountMap.replace(iata, currentCount);
+					} else {
+						tempAirportCountMap.put(iata, 1);
 					}
+				}
+			} else if (keyString.equals("AIRPORTCODE")) {
+				for (Text val : values) {
+					airportCodeMap.put(keyStringAttribute, val.toString());
 				}
 			}
 			
-			if (airportCountMap.containsKey(iata)) {
-				int currentCount = airportCountMap.get(iata);
-				currentCount += flightCount;
-				airportCountMap.replace(iata, currentCount);
-			} else {
-				airportCountMap.put(iata, flightCount);
+			if (keyString.equals("YEAR")) {
+				yearCountMap.put(Integer.parseInt(keyStringAttribute), tempAirportCountMap);
 			}
-			
-			tempAirportCountMap.put(iata, flightCount);
-			
-			if (!airportInfoMap.containsKey(iata)) {
-				airportInfoMap.put(iata, name + " , " + city + ", " + state);
-			}
-
 		}
-		
-		yearCountMap.put(Integer.parseInt(keyStringAttribute), tempAirportCountMap);
 	}
 	
 	@Override
 	protected void cleanup(Context context) throws IOException, InterruptedException {
 		
-		context.write(new Text("QUESTION 3: "), new Text("What are the major hubs (busiest airports) in continental U.S.? Please list the top 10."));
+		context.write(new Text("QUESTION 3: "), new Text("What are the major hubs (busiest airports) in continental U.S.? Has there been a change over the 21-year period covered by this dataset?"));
 		
-		context.write(new Text("DEBUG: "), new Text("Total number of entries in airportCountMap: " + airportCountMap.size()));
-		
-		context.write(new Text("DEBUG: "), new Text("Total number of entries in debugMMap: " + debugMMap.size()));
-		
-		if (!debugMMap.isEmpty()) {
-			int count = 0;
-			for (String s : debugMMap.keySet()) {
-				if (count > 1) {
-					break;
-				} else {
-					context.write(new Text("DEBUG: "), new Text("debugMMap Key: " + s));
-					context.write(new Text("DEBUG: "), new Text("debugMMap Entry: " + debugMMap.get(s)));
+		// go through each year and caluculate the busiest airports for a given year
+		for (int year : yearCountMap.keySet()) {
+			HashMap<String, Integer> yearsAirportCount = yearCountMap.get(year);
+			for (String iata : yearsAirportCount.keySet()) {
+				if (airportCodeMap.containsKey(iata)) {
+					int airportFlightCount = yearsAirportCount.get(iata);
+					
+					if (airportCountMap.containsKey(iata)) {
+						int currentCount = airportCountMap.get(iata);
+						currentCount += airportFlightCount;
+						airportCountMap.replace(iata, currentCount);
+					} else {
+						airportCountMap.put(iata, airportFlightCount);
+					}
 				}
-				count++;
+			}
+					
+			Map<String, Integer> sortedTopAirportsByYearMap =
+					yearsAirportCount.entrySet().stream()
+                    .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
+                            (e1, e2) -> e1, LinkedHashMap::new));
+			
+			context.write(new Text(""), new Text(""));
+			context.write(new Text("Year: "), new Text(Integer.toString(year)));
+			
+			int airportSize = 0;
+			
+			if (yearsAirportCount.size() > 10) {
+				 airportSize = 10;
+			} else {
+				airportSize = sortedTopAirportsByYearMap.size();
+			}
+			
+			int airportCount = 0;
+			for (String airport : sortedTopAirportsByYearMap.keySet()) {
+				if (airportCount >= airportSize) {
+					break;
+				}
+				int flightCount = sortedTopAirportsByYearMap.get(airport);
+				String airportName = airportCodeMap.get(airport);
+				
+				airportCount++;
+				context.write(new Text(airportCount + ": (" + airport + ") " + airportName), new Text("Number of Flights:\t" + flightCount));
+				
 			}
 		}
 		
+		// calculate the busiest airport across the entire dataset
 		Map<String, Integer> sortedTopAirportsMap =
 				airportCountMap.entrySet().stream()
-                        .sorted(Map.Entry.comparingByValue())
-                        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
-                                (e1, e2) -> e1, LinkedHashMap::new));
+                .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
+                        (e1, e2) -> e1, LinkedHashMap::new));
 		
 		context.write(new Text(""), new Text(""));
+		context.write(new Text("QUESTION 3 (continued): "), new Text("What are the major hubs (busiest airports) in continental U.S.? Please list the top 10."));
 		
 		int airportSize = 0;
 		
@@ -134,46 +134,12 @@ public class Q03Reducer extends Reducer<Text, Text, Text, Text> {
 				break;
 			}
 			int flightCount = sortedTopAirportsMap.get(airport);
-			String airportName = airportInfoMap.get(airport);
+			String airportName = airportCodeMap.get(airport);
 			
-			context.write(new Text(airportName), new Text("Flights: " + flightCount));
 			airportCount++;
-		}
-		
-		context.write(new Text("QUESTION 3 (continued): "), new Text("Has there been a change over the 21-year period covered by this dataset?"));
-		
-		for (Integer year : yearCountMap.keySet()) {
-			HashMap<String, Integer> yearCounts = yearCountMap.get(year);
+			context.write(new Text(airportCount + ": (" + airport + ") " + airportName), new Text("Number of Flights:\t" + flightCount));
 			
-			Map<String, Integer> sortedTopAirportsByYearMap =
-					yearCounts.entrySet().stream()
-	                        .sorted(Map.Entry.comparingByValue())
-	                        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
-	                                (e1, e2) -> e1, LinkedHashMap::new));
-			
-			context.write(new Text(""), new Text(""));
-			context.write(new Text("Year: "), new Text(year.toString()));
-			
-			airportSize = 0;
-			
-			if (yearCounts.size() > 10) {
-				 airportSize = 10;
-			} else {
-				airportSize = sortedTopAirportsByYearMap.size();
-			}
-			
-			airportCount = 0;
-			for (String airport : sortedTopAirportsByYearMap.keySet()) {
-				if (airportCount >= airportSize) {
-					break;
-				}
-				int flightCount = sortedTopAirportsByYearMap.get(airport);
-				String airportName = airportInfoMap.get(airport);
-				
-				context.write(new Text(airportName), new Text("Flights: " + flightCount));
-				airportCount++;
-			}
 		}
 	}
-	
+
 }

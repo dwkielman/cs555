@@ -14,14 +14,9 @@ public class Q04Mapper extends Mapper<LongWritable, Text, Text, Text> {
 	@Override
     protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
 		if(!value.toString().isEmpty()){
-			//ArrayList<String> record = DataUtilities.dataReader(value.toString());
 			String[] record = value.toString().split(",");
 			
-			//if (record.size() >= 26) {
 			if (record.length >= 26) {
-				//String origin = record.get(17);
-				//String dest = record.get(18);
-				//String weatherDelay = record.get(26);
 				
 				String origin = record[16];
 				String dest = record[17];

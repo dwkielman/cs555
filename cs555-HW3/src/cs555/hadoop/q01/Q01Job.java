@@ -29,15 +29,13 @@ public class Q01Job {
 	            // Outputs from the Mapper.
 	            job.setMapOutputKeyClass(Text.class);
 	            job.setMapOutputValueClass(Text.class);
-	            //job.setMapOutputKeyClass(Text.class);
-	            //job.setMapOutputValueClass(Text.class);
+	            
 	            // Outputs from Reducer. It is sufficient to set only the following two properties
 	            // if the Mapper and Reducer has same key and value types. It is set separately for
 	            // elaboration.
-	            //job.setOutputKeyClass(Text.class);
 	            job.setOutputKeyClass(Text.class);
 	            job.setOutputValueClass(Text.class);
-	            //job.setOutputValueClass(Text.class);
+	            
 	            // path to input in HDFS
 	            FileInputFormat.addInputPath(job, new Path(args[0]));
 	            // path to output in HDFS
